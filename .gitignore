@@ -1,0 +1,25 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# OS cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor cruft
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Build cruft from unpack roundtrips (e.g., scratch markers)
+canary/_ok
+canary/_test
+canary/*.tmp
+
+# Do NOT ignore canary.skill - it is the committed build artifact
+!canary.skill

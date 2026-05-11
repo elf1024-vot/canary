@@ -7,7 +7,7 @@ description: "Writing evaluation routine for manuscripts. Runs a ProWritingAid-s
 
 **Skill name:** canary
 **Routine version:** v1.25.1
-**Skill version:** v1.2 (first-live-run hardening)
+**Skill version:** v1.3 (generic authoring + standards builder)
 
 Entry point for the Canary writing-evaluation routine. Runs an interview once per manuscript, saves answers to a config file alongside the manuscript, and reuses that file on all subsequent runs. Dispatches to Mode 1, 2, or 3 based on the saved or newly collected mode selection.
 
@@ -77,7 +77,7 @@ Detect the file format from `{{DOCUMENT_PATH}}`'s extension.
 
 Ask the user what to exclude from scoring. Plain text has no structural signal, so the routine cannot guess. Suggest common patterns as examples based on what the user's file appears to contain (detect from a brief Read of the first 30 lines). Do not present AskUserQuestion for plain text - use a free-text prompt:
 
-> I see this is a .txt file. I need to know what to strip before scoring. Based on the first few lines, I can see [brief observation]. Common patterns to consider: chapter title lines, preamble blocks (Part / Cast / Synopsis), tagged production markers like [[INTERNAL DIALOGUE]], [[THE BEAST]].
+> I see this is a .txt file. I need to know what to strip before scoring. Based on the first few lines, I can see [brief observation]. Common patterns to consider: chapter title lines, YAML front matter or preamble blocks, heading lines, or tagged production markers like [[THOUGHT: ...]] or <!--production notes-->.
 >
 > What should I strip? Name specific patterns, or say "strip nothing."
 
@@ -182,6 +182,26 @@ Tell the user: "Config saved to [path]. Future runs will reuse genre and mode un
 
 ---
 
+## Step 4b: Offer the standards builder (first run only)
+
+Run this step only on a first-run interview (Step 3 was executed, not skipped).
+
+Check whether `{{DOC_FOLDER}}\standards.md` already exists. If it does, skip this step.
+
+If it does not exist, ask:
+
+> "One more optional step: do you want to set up project-specific craft standards? This lets you define banned phrases, required elements, threshold adjustments, and voice rules that Canary will enforce on every run. Takes 5-15 minutes. You can always do it later by saying 'run the standards builder'."
+
+Use AskUserQuestion with two options:
+1. Yes, set up project standards now
+2. Skip for now (use the bundled defaults)
+
+If the user picks **1**, run the standards builder from `{SKILL_BASE}\references\standards_builder.md`. After it completes, proceed to Step 5.
+
+If the user picks **2**, proceed to Step 5 immediately.
+
+---
+
 ## Step 5: Execute
 
 State the safety guarantee again if Mode is 2 or 3.
@@ -242,6 +262,6 @@ Do not write any other fields to `pwa_config.json`. The strip engine and tokeniz
 
 ## Version history
 
-- **v1.2 (2026-04-23)** - First-live-run hardening after running /canary against Blondie Book 3 Ch13.1. Bumped routine version to v1.25.1 for the schema-shape mechanical-normalization escape hatch in `mode_1_report_only.md` Step 1c (also applies to Steps 2a, 3b, 3c when second-attempt failures are pure schema-shape with valid content). Bumped `grammar_spelling.md` to v1.4 (paragraph-definition hardening with worked example). Bumped `character_dialogue.md` to v1.2 (modes-shape WRONG/RIGHT callout). Bumped `summary_beat_sheet.md` to v1.2 (word-count procedure + structural_observations array constraint). These four edits address the concrete failure modes observed in the first live run: paragraph=line-number drift, modes-as-array drift, chapter_word_count off by 15.9%, and structural_observations as single string.
-- **v1.1 (2026-04-23)** - Portable skill release. All ELF-specific hardcoded paths replaced with `{SKILL_BASE}` (skill base directory) and `{{DOC_FOLDER}}` (manuscript folder). Output paths moved from `C:\Users\elf10\ClaudeCoWork\temp\` and `C:\Users\elf10\ClaudeCoWork\PWA\` to `{{DOC_FOLDER}}\`. Default config seed changed from hardcoded routine path to `{SKILL_BASE}\references\pwa_config.json`. Mode dispatch paths updated to `{SKILL_BASE}\references\`. Bundled: `_standards.md`, three mode prompts, five subagent prompts, default `pwa_config.json`, `strip_engine.py`, `tokenizer.py`, full `router/` package.
+- **v1.2 (2026-04-23)** - First-live-run hardening. Bumped routine version to v1.25.1 for the schema-shape mechanical-normalization escape hatch in `mode_1_report_only.md` Step 1c (also applies to Steps 2a, 3b, 3c when second-attempt failures are pure schema-shape with valid content). Bumped `grammar_spelling.md` to v1.4 (paragraph-definition hardening with worked example). Bumped `character_dialogue.md` to v1.2 (modes-shape WRONG/RIGHT callout). Bumped `summary_beat_sheet.md` to v1.2 (word-count procedure + structural_observations array constraint). These four edits address the concrete failure modes observed in the first live run: paragraph=line-number drift, modes-as-array drift, chapter_word_count off by ~16%, and structural_observations as single string.
+- **v1.1 (2026-04-23)** - Portable skill release. All hardcoded author-specific paths replaced with `{SKILL_BASE}` (skill base directory) and `{{DOC_FOLDER}}` (manuscript folder). Output paths moved to `{{DOC_FOLDER}}\`. Default config seed changed from hardcoded path to `{SKILL_BASE}\references\pwa_config.json`. Mode dispatch paths updated to `{SKILL_BASE}\references\`. Bundled: `_standards.md`, three mode prompts, five subagent prompts, default `pwa_config.json`, `strip_engine.py`, `tokenizer.py`, full `router/` package.
 - **v1.0 (2026-04-23)** - Initial portable skill release. Replaced `00_run.md` as the canonical entry point for PWA Mode 1/2/3 dispatch. Interview-once / config-reuse pattern saves genre, mode, and preprocessing rules to `pwa_config.json` next to the manuscript. POV character collected only when the active config requires it.

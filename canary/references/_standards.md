@@ -1,10 +1,12 @@
 # Writing Evaluation Standards Reference
 
+> **Bundled reference** — This file is loaded automatically on every Canary run as the technical foundation: detection heuristics, genre profiles, report format, subagent contracts, and base thresholds. To customize thresholds, banned patterns, or project-specific rules for your work, run the standards builder (say "run the standards builder") and Canary will create a `standards.md` alongside your document that layers on top of this file.
+
 ## What this document is
 
-This is the rulebook. It defines what "good" looks like for a piece of writing, in numbers, so a tool can grade a manuscript against it and produce a report the author can argue with.
+This is a rulebook template. It defines what "good" looks like for a piece of writing, in numbers, so a tool can grade a manuscript against it and produce a report the author can argue with.
 
-Every prompt in `PWA\routine\` loads this file first and applies it exactly as written. No threshold, banned pattern, tier rule, or exemption is defined anywhere else. If you want to change how the tool grades writing, you edit this document. The prompts inherit the change automatically.
+Every threshold, banned pattern, tier rule, and exemption must be defined in the user's active standards document. No threshold is defined inside any prompt. If you want to change how the tool grades writing, edit your standards document. The prompts inherit the change automatically.
 
 ## Why a standards document exists at all
 
@@ -55,7 +57,6 @@ Every category has a name, a metric, a threshold, and a direction (higher-is-bet
 | 7 | Passive Voice             | Passives per 100 sentences               | < 25.0               | lower     |
 | 9 | Emotion Tells             | Filter-word constructions as % of sentences | < 20%             | lower     |
 |10 | Weak Adverbs              | Weak adverbs per 1,000 words             | < 10.0               | lower     |
-|11 | Readability Grade         | Flesch-Kincaid grade level               | <= 8                 | lower     |
 |12 | Complex Paragraphs        | % of paragraphs flagged complex          | < 15%                | lower     |
 |13 | Glue Index                | % of glue words                          | < 40%                | lower     |
 |14 | Conjunction Starts        | % of sentences starting with conjunctions| < 9%                 | lower     |
@@ -86,7 +87,7 @@ Every category has a name, a metric, a threshold, and a direction (higher-is-bet
 
 ## Pre-processing: What Gets Scored
 
-Before any metric is computed, the author decides what counts as prose. Structural elements that the reader does not process as prose (headings, front-matter, production markers) skew every metric if scored. But what counts as structural is author-specific: VoT uses `[[INTERNAL DIALOGUE]]` brackets, another author might use `<<TAG>>`, another might use nothing and want every line scored.
+Before any metric is computed, the author decides what counts as prose. Structural elements that the reader does not process as prose (headings, front-matter, production markers) skew every metric if scored. But what counts as structural is author-specific: one author might use `[[THOUGHT:]]` brackets for interiority, another might use `<<TAG>>`, another might use nothing and want every line scored.
 
 This section defines the question. The router asks it at the start of every run.
 
@@ -98,14 +99,11 @@ Every run MUST resolve the author's pre-processing intent before scoring. Resolu
 
 The routine reads its preprocessing rules from a single JSON config file. This replaces the prior pattern of asking every preprocessing question fresh on every run, and replaces every hardcoded preprocessing rule in the strip script with a data-driven entry.
 
-**Config file location.** The routine looks for configs in this order:
+**Config file location.** The routine looks for the config at:
 
-1. `<manuscript-folder>/pwa_config.json` — per-manuscript override, if present.
-2. `C:\Users\elf10\ClaudeCoWork\PWA\routine\pwa_config.json` — routine-level default.
+`{{DOC_FOLDER}}\pwa_config.json`
 
-If neither exists, the routine triggers the first-run setup interview (below) and writes the result to the routine-level path.
-
-**Per-manuscript override semantics.** When both files exist, the per-manuscript config shallow-merges over the routine-level config. Top-level array fields (`header_strip_patterns`, `paired_delimiters`, `acronym_emphasis_exclusions`, `weak_adverb_noun_exclusions`, `ing_starts_proper_noun_exclusions`) concatenate with manuscript entries appended after routine entries. Under first-match-wins disambiguation, this means manuscript entries take **lower** priority than routine entries with the same opener — authors who want their per-manuscript rule to win must reorder by editing the manuscript config to include the routine entries explicitly. Top-level scalar fields (`schema_version`) take the manuscript value if present.
+If none exists, the routine triggers the first-run setup interview (below) and writes the result to `{{DOC_FOLDER}}\pwa_config.json`.
 
 **Schema (v1.22).**
 
@@ -121,31 +119,26 @@ If neither exists, the routine triggers the first-run setup interview (below) an
       "consume": "single_line"
     },
     {
-      "label": "Part/Cast block",
+      "label": "YAML front matter",
       "type": "line_starts_with",
-      "value": "Part ",
-      "and_contains": "Cast:",
-      "consume": "single_line"
-    },
-    {
-      "label": "WHAT HAPPENED block",
-      "type": "line_starts_with",
-      "value": "WHAT HAPPENED:",
-      "consume": "until_blank_line"
+      "value": "---",
+      "scope": "first_line_only",
+      "consume": "until_pattern",
+      "until_pattern": "---"
     }
   ],
   "paired_delimiters": [
     {
-      "opener": "[[INTERNAL DIALOGUE:",
+      "opener": "[[THOUGHT:",
       "closer": "]]",
       "mode": "A",
-      "label": "internal dialogue",
+      "label": "internal thought",
       "attributed_to_pov": true
     }
   ],
   "acronym_emphasis_exclusions": [],
   "weak_adverb_noun_exclusions": ["assembly", "family", "supply", "reply", "rally"],
-  "ing_starts_proper_noun_exclusions": []
+  "ing_starts_proper_noun_exclusions": ["nothing", "something", "morning", "evening"]
 }
 ```
 
@@ -157,34 +150,88 @@ If neither exists, the routine triggers the first-run setup interview (below) an
 - **`html_tag`** — strips HTML tag blocks. Required `tags` array (e.g., `["h1", "h2", "h3"]`). User-configurable `consume`: `tag_block` (strip opener through closer inclusive; handles inline `<h3>Title</h3>` and multi-line `<h3>\nTitle\n</h3>` the same way), `opener_line` (strip only the line containing the opener), `closer_line` (strip only the line containing the closer), `opener_and_closer_lines` (strip both opener and closer lines, keep content between them in scored prose). The author chooses `consume` per rule at setup; the default offered is `tag_block`.
 - **`regex`** — escape hatch for anything else. Required `pattern` (Python regex string). Same `scope` and `consume` options. The strip script applies `re.MULTILINE` by default; for multi-line patterns the rule MAY include `flags: ["DOTALL"]`.
 
-The routine ships with **no HTML tag rules** in the seed default config; HTML tag declarations are a per-author choice. The seed config does include the three currently-hardcoded `line_starts_with` patterns (Chapter title, Part/Cast, WHAT HAPPENED) because the existing canary work depends on them, but these are still data the author can edit out at first-run setup if their manuscript format does not use them.
+The skill ships with no strip rules in the bundled template config; all patterns are defined by the author at first-run setup.
 
 **`paired_delimiters` — three-mode taxonomy.** See *Special handling: paired-delimiter conventions* above for the A/B/C definitions. Each entry has `opener`, `closer`, `mode` (`"A"`, `"B"`, or `"C"`), `label` (human-readable, used in strip log and report). Mode A entries MAY include `attributed_to_pov: true` (default behavior — interior content attributed to the chapter's POV character whose name is supplied at runtime). Mode B entries MUST include `register_label` (used as the section header) and MAY include `register_description` (used in the section disclosure). Mode C entries need only `opener`, `closer`, `mode`, `label`.
 
 Disambiguation: array order, first-match-wins. The author orders entries from most-specific opener to least-specific.
 
+**`character_names`** — optional array of strings naming the characters in this document. Used by the Grammar and Spelling subagent to avoid flagging character names as misspellings. Example: `["Alex", "Jordan", "Stranger"]`. Default empty; populate at first-run setup or any time via the edit menu.
+
 **Exclusion lists.** Three editable arrays carry per-manuscript exclusions for the secondary-fix detectors:
 
 - `acronym_emphasis_exclusions` — ALL-CAPS sequences that the Acronym Consistency detector should treat as typographic emphasis (book/franchise titles, in-world organization names, stylistic shouts) rather than acronyms. Default empty; populated per manuscript at setup or as canaries surface false positives.
-- `weak_adverb_noun_exclusions` — common -ly nouns (assembly, family, supply, reply, rally, etc.) the Weak Adverbs detector should skip. Seed default populated with the obvious cases; authors append more as their manuscripts surface them.
-- `ing_starts_proper_noun_exclusions` — capitalized -ing tokens that are proper nouns or non-participle words rather than verb participles (Crimson, Inferior, Practitioner, etc.). Default empty.
+- `weak_adverb_noun_exclusions` — common -ly nouns (assembly, family, supply, reply, rally, etc.) the Weak Adverbs detector should skip because they are nouns not adverbs. Seed default populated with common English false positives; authors append per-manuscript as canaries surface more.
+- `ing_starts_proper_noun_exclusions` — capitalized -ing tokens that are proper nouns or non-participle words rather than verb participles (character surnames, place names, etc.). Seed default populated with common English false positives (nothing, something, morning, etc.); authors append per-manuscript as canaries surface more.
 
 Each exclusion list applies to its corresponding detector via case-insensitive substring or token match; the detector's Detection Heuristics section specifies the exact comparison rule.
 
-**First-run setup interview.** When no config file exists at either path, the routine walks the author through a structured interview:
+**First-run setup interview.** When no config file exists for the document, the routine runs a short conversational interview. The goal is to capture what the author wants ignored in plain English; the routine translates answers into config entries without exposing JSON structure to the author.
 
-1. **Manuscript format** (Markdown / plain text / Word export / HTML / other) — used to suggest sensible starting `header_strip_patterns`.
-2. **Header strip rules** — for each declared rule, the author specifies `label`, `type`, the type-specific fields (e.g., `value` for `line_starts_with`, `levels` for `markdown_heading`, `tags` and `consume` for `html_tag`), and `scope`/`consume` where applicable.
-3. **Paired delimiters** — for each declared pair, the author specifies opener, closer, mode (with the A/B/C definitions read aloud), label, and Mode-specific fields.
-4. **Exclusion lists** — seeded with sensible defaults (empty for acronym emphasis and -ing proper nouns; populated for weak-adverb -ly nouns); the author can append at setup or defer to first canary.
+**Q1 — What should I ignore?**
 
-The result is written to the routine-level config path. Subsequent runs load it silently.
+Read the first 30 lines of the document and show them to the author. Ask:
 
-**Restart prompt behavior.** On subsequent runs, after loading the config the routine reports a one-line summary:
+> "Here's the top of your document. What should I skip when scoring? For example: headings, chapter titles, a 'Cast of Characters' block, anything in special brackets — or 'nothing, score everything'."
 
-> `PWA config loaded: 5 header rules, 3 paired delimiters (1 Mode A, 1 Mode B, 1 Mode C), 5 weak-adverb noun exclusions. Update? [y/N]`
+Translate each answer into a `header_strip_patterns` entry. Translation table:
 
-Default `N` — proceed straight to the run with the loaded config. If the author answers `y`, the routine drops into a structured edit menu (numbered text menu in CLI/Code, AskUserQuestion picker in Cowork — the routine detects context). The menu offers add/edit/remove for each top-level array, plus view-current-config, save-and-continue, and cancel-discard-changes options. Edits are written back to the config file on save; a single `.bak` of the prior config is kept (overwritten each save) so a bad edit can be reverted. The `.bak` file is intentionally a single rolling backup rather than N rotating backups, since the config is small, version-controlled in git, and rolling backups create their own clutter.
+| Author says | Config entry type |
+|---|---|
+| "All lines starting with #" | `markdown_heading`, all levels |
+| "The first line if it's a chapter title" | `line_starts_with`, `"Chapter "`, `first_line_only` |
+| "Lines starting with 'Cast:'" | `line_starts_with`, `"Cast:"`, `all` |
+| "The YAML front matter at the top" | `line_starts_with`, `"---"`, `first_line_only`, `consume: until_pattern` |
+| "H3 headings" | `markdown_heading`, levels [3] |
+| "Anything in all-caps on its own line" | `regex_match`, `"^[A-Z\s]{4,}$"`, `all` |
+
+If the author is unsure, offer the suggestion appropriate to their file type (see "Suggested starting defaults by format" below).
+
+**Q2 — Do you use any special markers?**
+
+Ask:
+
+> "Do you use any special markers for things like internal thoughts, production notes, or atmospheric voice? For example: `[[THINKING: some text ]]`, `<< note >>`, or text in asterisks. If not, say 'no'."
+
+If yes, ask one follow-up to classify:
+
+> "Should the text inside those markers count toward the scored prose (just strip the markers), or should the whole block be excluded from scoring?"
+
+Map the answer to a mode:
+
+- **Strip markers only, keep and score the content** → Mode A (attributed to POV character; use for character interiority)
+- **Exclude the whole block from scoring, but mention it in the report** → Mode B (use for non-character voice registers, editor notes)
+- **Remove silently, no mention in report** → Mode C (use for purely production-side annotations)
+
+**Q3 — Anything to exclude from specific checks?**
+
+Ask:
+
+> "Are there any words ending in -ly that aren't actually adverbs in your writing? For example: character surnames, place names, or specialist terms. I already skip common English nouns like 'family' and 'supply'. Leave blank to use the defaults, or name additional words to exclude."
+
+Accept a comma-separated list. Append to `weak_adverb_noun_exclusions`.
+
+**Q4 — Character names.**
+
+Ask:
+
+> "What character names appear in this document? I'll pass them to the spelling checker so they are not flagged as misspellings. Leave blank if you prefer to skip this."
+
+Accept a comma-separated list. Store as `character_names` array.
+
+**Confirm before saving.** Present a plain-English summary:
+
+> "Based on your answers, I'll ignore: [list in plain English]. Special markers: [list with mode]. Everything else gets scored. Does this look right? [y/edit]"
+
+If the author wants changes, loop back. If confirmed, write `{{DOC_FOLDER}}\pwa_config.json` and proceed.
+
+The result is written to `{{DOC_FOLDER}}\pwa_config.json`. Subsequent runs load it silently.
+
+**Restart prompt behavior.** On subsequent runs, after loading the config the routine reports a plain-English summary in the same conversational register as the first-run interview:
+
+> "Skipping: [list what is being ignored in plain English, e.g. 'chapter titles, H3 headings']. Markers: [e.g. 'internal thoughts (scored and attributed to POV)']. Ready to run. Want to change any of this? [y/n]"
+
+Default `n` proceeds straight to the run. If the author answers `y`, the routine drops into a structured edit menu (numbered text menu in CLI/Code, AskUserQuestion picker in Cowork — the routine detects context). The menu offers add/edit/remove for each top-level array, plus view-current-config, save-and-continue, and cancel-discard-changes options. Edits are written back to the config file on save; a single `.bak` of the prior config is kept (overwritten each save) so a bad edit can be reverted.
 
 **Strip log.** Alongside the marker map JSON, the strip script writes a strip log recording which rules fired and how many times:
 
@@ -192,9 +239,9 @@ Default `N` — proceed straight to the run with the loaded config. If the autho
 {
   "rules_applied": [
     { "label": "chapter title", "matches": 1 },
-    { "label": "WHAT HAPPENED block", "matches": 1, "lines_consumed": 3 },
-    { "label": "internal dialogue (Mode A)", "matches": 11, "interior_words_kept": 332 },
-    { "label": "non-character voice (Mode B)", "matches": 1, "interior_words_excluded": 18 }
+    { "label": "YAML front matter", "matches": 1, "lines_consumed": 3 },
+    { "label": "internal thought (Mode A)", "matches": 11, "interior_words_kept": 332 },
+    { "label": "omniscient narrator (Mode B)", "matches": 1, "interior_words_excluded": 18 }
   ],
   "rules_zero_matches": ["markdown h3", "blockquotes"],
   "summary": "9 of 9 active rules processed; 2 rules with zero matches."
@@ -216,45 +263,45 @@ These are defaults the router offers as starting points. The author can accept, 
 
 ### Special handling: paired-delimiter conventions (v1.22)
 
-Some authors mark interior monologue, atmospheric voice, or production-only notes with paired delimiters like `[[INTERNAL DIALOGUE: ... ]]`, `<<THINKING>>...</THINKING>>`, asterisk-wrapped *italics*, HTML comments, or any other author-specific convention. These markers are structural wrappers, not prose, but they fall into different functional categories and require different handling.
+Some authors mark interior monologue, atmospheric voice, or production-only notes with paired delimiters like `[[THOUGHT: ... ]]`, `<<THINKING>>...</THINKING>>`, asterisk-wrapped *italics*, HTML comments, or any other author-specific convention. These markers are structural wrappers, not prose, but they fall into different functional categories and require different handling.
 
 **The three-mode taxonomy (v1.22).** Every paired-delimiter convention an author declares is classified into exactly one of three modes. The author makes this classification at first-run setup (see *Config-driven preprocessing* below); the routine treats unclassified `[[<TAG>: ...]]`-shaped content as prose and warns the author so they can classify it on the next run.
 
-- **Mode A — Character interiority (scored, attributed).** Markers stripped; interior content kept in scored prose; interior spans recorded in the marker map under `internal_mode_spans` and attributed to a named POV character as a second speech mode. The Character Dialogue Consistency subagent reads the marker map and renders two fingerprints (spoken + internal) for that POV character. (This is v1.21's INTERNAL DIALOGUE behavior, generalized to any paired convention an author declares as Mode A.)
-- **Mode B — Non-character voice register (diagnostic, not scored).** Markers AND interior content both stripped from the scored corpus; interior spans recorded in the marker map under `non_character_voice_spans`. A dedicated *Non-Character Voice Registers* report section surfaces count, paragraph numbers, and verbatim text with explicit disclosure that this register was excluded from scoring. No score impact, no penalty, no goal counted against. Use Mode B for atmospheric voice, choric narration, antagonist intrusions, or any voice that is not a named character speaking but is part of the manuscript's intentional register.
+- **Mode A — Character interiority (scored, attributed).** Markers stripped; interior content kept in scored prose; interior spans recorded in the marker map under `internal_mode_spans` and attributed to a named POV character as a second speech mode. The Character Dialogue Consistency subagent reads the marker map and renders two fingerprints (spoken + internal) for that POV character.
+- **Mode B — Non-character voice register (diagnostic, not scored).** Markers AND interior content both stripped from the scored corpus; interior spans recorded in the marker map under `non_character_voice_spans`. A dedicated *Non-Character Voice Registers* report section surfaces count, paragraph numbers, and verbatim text with explicit disclosure that this register was excluded from scoring. No score impact, no penalty, no goal counted against. Use Mode B for atmospheric narration, choric voice, omniscient intrusions, or any voice that is not a named character speaking but is part of the manuscript's intentional register.
 - **Mode C — Production-only strip (silent).** Markers and interior content both stripped; nothing logged or surfaced. For author-side notes, TODO markers, scene-break placeholders, structural cues that should never appear in any version of the report.
 
-**Backward compatibility.** v1.21's `[[INTERNAL DIALOGUE:` / `]]` rule becomes a Mode A entry in the seed default config. Authors with other paired conventions (e.g., `<<THINKING>>...</THINKING>>`, asterisk-italics, custom XML-style tags) declare their opener/closer pair plus mode at first-run setup and the stripper applies the appropriate rule. The pre-v1.21 "strip everything including content" behavior is now Mode C and remains selectable.
+Authors with paired conventions (e.g., `[[THINKING: ... ]]`, `<<NARRATOR>>...</NARRATOR>>`, asterisk-italics, custom XML-style tags) declare their opener/closer pair plus mode at first-run setup and the stripper applies the appropriate rule. The "strip everything including content" behavior is Mode C and remains selectable.
 
-**Disambiguation.** When multiple declared pairs could match the same span (e.g., both `[[INTERNAL DIALOGUE:` and a fallback `[[`), the strip script processes pairs in declaration array order, first-match-wins. Authors put the more specific opener earlier in the array.
+**Disambiguation.** When multiple declared pairs could match the same span (e.g., both `[[THOUGHT:` and a fallback `[[`), the strip script processes pairs in declaration array order, first-match-wins. Authors put the more specific opener earlier in the array.
 
 ### Marker map file
 
 When paired-delimiter stripping is used (any Mode A or Mode B declarations exist), the stripper writes a marker map alongside the stripped prose:
 
-`C:\Users\elf10\ClaudeCoWork\temp\[Title] - marker map [YYYY-MM-DD].json`
+`{{DOC_FOLDER}}\[Title] - marker map [YYYY-MM-DD].json`
 
 Schema (v1.22):
 
 ```json
 {
-  "pov_character": "Ulysses",
-  "source_chapter": "C:\\path\\to\\source.txt",
-  "stripped_file": "C:\\path\\to\\stripped.txt",
+  "pov_character": "Marcus",
+  "source_chapter": "{{DOC_FOLDER}}\\source.txt",
+  "stripped_file": "{{DOC_FOLDER}}\\stripped.txt",
   "paired_delimiter_declarations": [
     {
-      "opener": "[[INTERNAL DIALOGUE:",
+      "opener": "[[THOUGHT:",
       "closer": "]]",
       "mode": "A",
-      "label": "internal dialogue",
+      "label": "internal thought",
       "attributed_to_pov": true
     },
     {
-      "opener": "[[THE BEAST:",
+      "opener": "[[NARRATOR:",
       "closer": "]]",
       "mode": "B",
       "label": "non-character voice register",
-      "register_label": "Inner Beast",
+      "register_label": "Omniscient Narrator",
       "register_description": "Atmospheric voice; not a named character; diagnostic only, not scored."
     },
     {
@@ -274,11 +321,11 @@ Schema (v1.22):
   ],
   "non_character_voice_spans": [
     {
-      "register_label": "Inner Beast",
+      "register_label": "Omniscient Narrator",
       "source_paragraph_start": 151,
       "source_paragraph_end": 151,
       "word_count": 18,
-      "text": "Take him now. Put your hands on the shape he's about to wear. End what moves.",
+      "text": "The city never forgave its deserters. It only waited, patient as a debt collector.",
       "note": "stripped from scored corpus per Mode B"
     }
   ]
@@ -307,7 +354,7 @@ Different authors use different markup. Forcing a default strips things the auth
 
 ### Reuse
 
-As of v1.22, all three modes (Mode 1, Mode 2, Mode 3) read preprocessing rules from `pwa_config.json` (per-manuscript override, then routine-level default). The first-run interview writes the config; subsequent runs load it silently and offer the restart prompt described above. The legacy `user_config.json.preprocessing` field is retained only for backward compatibility; Mode 3 should migrate any values it finds there into `pwa_config.json` on first read and stop maintaining the legacy field.
+All three modes (Mode 1, Mode 2, Mode 3) read preprocessing rules from `{{DOC_FOLDER}}\pwa_config.json`. The first-run interview writes the config; subsequent runs load it silently and offer the restart prompt described above.
 
 ---
 
@@ -363,7 +410,7 @@ Every subagent the routine dispatches (Strip Verification, Grammar and Spelling,
 
 ### Why the gate cannot live in the subagent prompt
 
-Surfaced by the Babydoll Book 2 Ch19.1 canary on 2026-04-22. The Grammar and Spelling subagent's prompt contained a self-evaluation gate with explicit pass / fail thresholds. The subagent returned a result that violated the gate AND reported its own verdict as "passed." The prompt instruction was ignored.
+Surfaced during an end-to-end canary run. The Grammar and Spelling subagent's prompt contained a self-evaluation gate with explicit pass / fail thresholds. The subagent returned a result that violated the gate AND reported its own verdict as "passed." The prompt instruction was ignored.
 
 This is a structural property of subagent dispatch, not a quirk of one bad run: a subagent reading a long instruction will tend to produce output that looks like what the instruction seems to want, regardless of whether the underlying observation supports that output. Asking the subagent to self-reject is asking it to fight that gradient. It will not reliably do so.
 
@@ -388,7 +435,7 @@ Strip Verification (subagent) is itself bound by this rule: the router checks th
 
 Each subagent has a router-side validator config defining the validation rules:
 
-- **Grammar and Spelling**: every `excerpt`, `context`, and `word` substring-checked against the stripped file; every `paragraph` field in range `[1, file_paragraph_count]`; no citation contains a guaranteed-hallucination marker (strip-removed tokens like `[[INTERNAL DIALOGUE:`, `[[THE BEAST:`, `WHAT HAPPENED:`, or chapter-title patterns); `score_pct` matches `100 * (1 - issues_found / total)` to 2 decimals.
+- **Grammar and Spelling**: every `excerpt`, `context`, and `word` substring-checked against the stripped file; every `paragraph` field in range `[1, file_paragraph_count]`; no citation contains a guaranteed-hallucination marker (strip-removed tokens such as paired-delimiter content, heading lines, or other patterns declared in the author's config); `score_pct` matches `100 * (1 - issues_found / total)` to 2 decimals.
 - **Strip Verification**: `verdict` field present; every `failures` entry references a real category from the strip log.
 - **Summary and Beat Sheet**: 5 `<=` beat count `<=` 10; every named character must appear in the source chapter; word ranges must fit within the chapter's word count.
 - **Character Dialogue Consistency**: every fingerprint's `line_count >= 6` for any non-`insufficient` `sample_status`; every drift_flag and attribution_flag's `paragraph` and `text` substring-checked against stripped file; cross-mode drift flags (spoken-to-internal for the same POV character) are zero (else FIX).
@@ -398,7 +445,7 @@ Each subagent has a router-side validator config defining the validation rules:
 
 A canary against a multi-pass-reviewed chapter will often return Grammar 100% and Spelling 100%. That is the correct result. The router validates what the subagent DID claim (the citations in its issue arrays substring-check against the stripped file; its paragraph references land inside the file; its score math is correct), not what it should have claimed alongside. A subagent that short-circuits and returns zero issues on a genuinely clean chapter produces the same output as one that did the work and found nothing — the router does not try to distinguish them.
 
-This reflects a deliberate narrowing after the Babydoll Book 2 Ch19.1 canary: spelling integrity is a function of what the subagent flags (step 6 of the Recognition Order — true misspellings and misuses), not a function of what it excluded along the way. Foreign vocabulary, proper nouns, coined terms, and genuine unknowns are not reported and are not gated on. The router's job is to confirm that the issues the subagent DOES report are real (exist in the file, reference real paragraphs, not invented).
+This reflects a deliberate architectural narrowing: spelling integrity is a function of what the subagent flags (step 6 of the Recognition Order — true misspellings and misuses), not a function of what it excluded along the way. Foreign vocabulary, proper nouns, coined terms, and genuine unknowns are not reported and are not gated on. The router's job is to confirm that the issues the subagent DOES report are real (exist in the file, reference real paragraphs, not invented).
 
 ---
 
@@ -416,7 +463,7 @@ An independent verification step catches both failure modes before the tokenizer
 
 After stripping and before the tokenizer runs, the router MUST:
 
-1. **Compare the author's declared strip list against what the stripping pass actually produced.** Every category the author named (e.g., chapter title line, `WHAT HAPPENED:` block, `[[INTERNAL DIALOGUE]]` markers) must appear zero times in the stripped file. If any category survives, the strip failed and the script must be re-run or fixed before continuing.
+1. **Compare the author's declared strip list against what the stripping pass actually produced.** Every category the author named (e.g., chapter title line, YAML front matter, paired-delimiter markers) must appear zero times in the stripped file. If any category survives, the strip failed and the script must be re-run or fixed before continuing.
 2. **Confirm no narrative prose was removed.** Spot-check: pick at least three narrative paragraphs from the original at varied positions (opening, middle, closing) and verify each appears verbatim in the stripped file. If any declared-prose paragraph is missing, the strip over-reached.
 3. **Sanity-check the word-count delta.** Compute `original_word_count - stripped_word_count = delta`. The delta should be plausible given the strip list: a rough sum of the word counts for each declared category. If the delta is off by more than 10% in either direction, re-verify.
 4. **Record the verification result in a Strip Verification note.** The note lists each strip category with a found/not-found result and the word-count delta.
@@ -528,7 +575,7 @@ A subagent is used rather than the main context for three reasons:
 
 The report's What Happened summary and Beat Sheet appear in the first two sections the reader encounters. They establish whether the evaluator understood the document before any metric is presented. If they are wrong, every number that follows is suspect regardless of how carefully it was computed.
 
-The v3 canary on Rocket Ch1.1 exposed the failure mode: the main context produced a What Happened that invented characters (a "Santiago," a "Javier," a "rancher's wife"), plot events (a kitchen scene, a Spanish phone call, coyotes "sent to collect"), and a fundamental misread of genre (a kidnap/rescue story, when the chapter is a vampiric transformation and predatory hunt). The POV character's name was wrong. None of the summary was on the page. The metrics that followed were correct, but the report as a deliverable was not, because a reader who noticed the fabrication in the opening sections had no reason to trust the rest.
+An early canary run exposed the failure mode: the main context produced a What Happened that invented characters not in the chapter, plot events that never occurred, and a fundamental misread of genre. The POV character's name was wrong. None of the summary was on the page. The metrics that followed were correct, but the report as a deliverable was not, because a reader who noticed the fabrication in the opening sections had no reason to trust the rest.
 
 This is the same architectural failure as the Grammar/Spelling punt in v3: LLM-sourced content produced inline from the main context, with no fresh-eyes check against the actual prose. The fix is the same: delegate to a subagent reading the full chapter with a clean context window and a strict no-invention constraint.
 
@@ -667,8 +714,8 @@ The subagent returns one of three outcomes:
 {
   "verdict": "PASS" | "FIX" | "FAIL",
   "narrative_checks": [
-    { "claim": "POV: Naida", "found_in_chapter": true },
-    { "claim": "feeds on the trafficker", "found_in_chapter": true }
+    { "claim": "POV: Maya", "found_in_chapter": true },
+    { "claim": "confronts the rival", "found_in_chapter": true }
   ],
   "metric_checks": [
     { "report_value": "99.64%", "source_value": "99.64", "matches": true },
@@ -709,11 +756,11 @@ The subagent returns one of three outcomes:
   "character_dialogue_checks": {
     "pass_ran": true,
     "marker_map_present": true,
-    "characters_in_json": ["Naida", "Ana", "Doorman"],
-    "characters_in_report": ["Naida", "Ana", "Doorman"],
-    "pov_characters_with_two_modes": ["Naida"],
+    "characters_in_json": ["Maya", "Rosa", "Stranger"],
+    "characters_in_report": ["Maya", "Rosa", "Stranger"],
+    "pov_characters_with_two_modes": ["Maya"],
     "modes_rendered_per_pov": {
-      "Naida": ["spoken", "internal"]
+      "Maya": ["spoken", "internal"]
     },
     "missing_headline_labels": [],
     "drift_flag_count_in_json": 1,
@@ -729,16 +776,16 @@ The subagent returns one of three outcomes:
     "marker_map_has_mode_b_spans": true,
     "section_present_in_report": true,
     "diagnostic_disclosure_language_present": true,
-    "registers_in_marker_map": ["Inner Beast"],
-    "registers_in_report": ["Inner Beast"],
-    "registers_in_scope_note": ["Inner Beast"],
+    "registers_in_marker_map": ["Omniscient Narrator"],
+    "registers_in_report": ["Omniscient Narrator"],
+    "registers_in_scope_note": ["Omniscient Narrator"],
     "spans_in_marker_map": 1,
     "spans_rendered_in_report": 1,
     "mode_b_content_absent_from_stripped": true
   },
   "config_and_strip_log_checks": {
     "config_path_in_scope_note": true,
-    "active_config_path": "C:\\Users\\elf10\\ClaudeCoWork\\PWA\\routine\\pwa_config.json",
+    "active_config_path": "{{DOC_FOLDER}}\\pwa_config.json",
     "strip_log_present": true,
     "strip_log_labels_match_config_labels": true,
     "strip_log_summary_present": true
@@ -763,13 +810,13 @@ This pass exists because the main context is the only part of the pipeline that 
 
 ## Character Dialogue Consistency Pass: Subagent-Delegated Per-Character Voice Analysis
 
-Per-character voice consistency is the second chapter-scale check that pattern-matching software cannot do. A tokenizer can count tags, classify verbs, and measure adverb-pairing, but it cannot tell you whether Naida sounds like Naida across 20 lines of dialogue, or whether a line attributed to Naida reads like Ana would say it. That is language work. The routine delegates it to a subagent, mirroring the Summary and Grammar/Spelling architectures.
+Per-character voice consistency is the second chapter-scale check that pattern-matching software cannot do. A tokenizer can count tags, classify verbs, and measure adverb-pairing, but it cannot tell you whether Maya sounds like Maya across 20 lines of dialogue, or whether a line attributed to Maya reads like Rosa would say it. That is language work. The routine delegates it to a subagent, mirroring the Summary and Grammar/Spelling architectures.
 
 Scope is chapter-internal only. This pass does NOT compare the chapter against prior chapters, a character profile, or MCP canon. It measures whether each character's voice holds together inside the current chapter and whether tagged lines match the fingerprint the character established elsewhere in that same chapter. Cross-chapter voice drift and canon-consistency are out of scope by design; the only input this pass receives is the chapter (plus, when available, the marker map identifying internal-mode spans per the v1.21 pre-processing rule).
 
 ### Speech modes: spoken and internal (v1.21)
 
-Dialogue is not only quoted speech. When a chapter uses paired-delimiter markers for interiority (e.g., `[[INTERNAL DIALOGUE: ... ]]`) and the v1.21 pre-processing rule has retained that prose while stripping the markers, the retained spans ARE voice data — the POV character speaking to themselves. The Character Dialogue Consistency pass treats these as a second speech mode.
+Dialogue is not only quoted speech. When a chapter uses paired-delimiter markers for interiority (e.g., `[[THOUGHT: ... ]]`) and the pre-processing rule has retained that prose while stripping the markers, the retained spans ARE voice data — the POV character speaking to themselves. The Character Dialogue Consistency pass treats these as a second speech mode.
 
 For the POV character (or characters, if a chapter has multiple POVs), the subagent builds **two fingerprints**:
 
@@ -802,7 +849,7 @@ And row 23 is exempt from the goals denominator.
 
 For each character who clears the floor, the subagent builds a fingerprint across an **identity label** plus five dimensions:
 
-0. **Identity label.** A short phrase naming what the voice IS, not just its component parts. Two to five tags, comma-separated, drawn from what the dialogue itself establishes: generation (Gen Z, millennial, Gen X, boomer, youth, elder), cultural background where visible in speech (Latina, Southern US, Appalachian, British, Australian, Mexican-American, etc.), register stance (formal, street, academic, corporate, military, clerical), and one defining attitude or role where it reads clearly (world-weary, performatively chipper, sardonic, deferential, paternal, predatory, traumatized). Example: "Naida: Gen Z, Latina, sardonic, code-switches Spanish." "Ana: elder, formal, Old-World Mexican, measured." The label is the evaluator's read of who is speaking, based strictly on how they speak in this chapter. It is not a character bio and is not sourced from outside the chapter. If the chapter does not give enough signal for a dimension (e.g., generation unclear), omit that tag rather than guess.
+0. **Identity label.** A short phrase naming what the voice IS, not just its component parts. Two to five tags, comma-separated, drawn from what the dialogue itself establishes: generation (Gen Z, millennial, Gen X, boomer, youth, elder), cultural background where visible in speech (Latina, Southern US, Appalachian, British, Australian, Mexican-American, etc.), register stance (formal, street, academic, corporate, military, clerical), and one defining attitude or role where it reads clearly (world-weary, performatively chipper, sardonic, deferential, paternal, predatory, traumatized). Example: "Maya: Gen Z, sardonic, terse, code-switches." "Rosa: elder, formal, measured, rarely contracts." The label is the evaluator's read of who is speaking, based strictly on how they speak in this chapter. It is not a character bio and is not sourced from outside the chapter. If the chapter does not give enough signal for a dimension (e.g., generation unclear), omit that tag rather than guess.
 
 1. **Sentence length distribution.** Short-clipped (avg <= 8 words), medium (9-15), long-rolling (16+), or mixed (no clear center).
 2. **Diction register.** Formal, informal, vulgar, archaic, technical, or code-switched (mixes registers deliberately). Note any consistent linguistic tics (honorifics, profanity frequency, slang markers).
@@ -810,7 +857,7 @@ For each character who clears the floor, the subagent builds a fingerprint acros
 4. **Signature markers.** Recurring phrases, verbal tics, code-switching into another language, unusual punctuation habits (em-dash breaks, ellipsis trailing, all caps for emphasis). Note what is recurrent, not one-offs.
 5. **Contractions use.** Always contracts (casual), never contracts (formal/foreign/archaic), or inconsistent (flag as voice instability on its own).
 
-The fingerprint is summarized in the report with the identity label as its headline and the five dimensions as evidence. Drift and mismatch flags cite the specific dimensions that moved, with the identity label as the frame ("Naida: Gen Z, Latina, sardonic — drift at paragraph 34 where line reads as formal, long, uncontracted, matching an older or academic register the character has not established elsewhere").
+The fingerprint is summarized in the report with the identity label as its headline and the five dimensions as evidence. Drift and mismatch flags cite the specific dimensions that moved, with the identity label as the frame ("Maya: Gen Z, sardonic, terse — drift at paragraph 34 where line reads as formal, long, uncontracted, matching an older or academic register the character has not established elsewhere").
 
 ### The analysis step
 
@@ -818,7 +865,7 @@ After strip verification passes, the Grammar/Spelling subagent completes, and th
 
 1. **Receives** the path to the verified stripped prose file, the path to the marker map file (if present; v1.21), the genre, and the Fingerprint dimensions specification from this section.
 2. **Reads** the full stripped prose and, if provided, the marker map identifying internal-mode spans per POV character.
-3. **Attributes** every line of dialogue to a speaker using explicit tags ("Naida said"), contextual cues (response to a named addressee, paragraph structure, the speaker being the POV character), and proper-noun tracking across the chapter. Internal-mode spans from the marker map are attributed to the specified POV character as internal speech mode. If a line is genuinely unattributable, count it as "unattributed" and exclude it from every character's line count but note the total at the report's end.
+3. **Attributes** every line of dialogue to a speaker using explicit tags ("Maya said"), contextual cues (response to a named addressee, paragraph structure, the speaker being the POV character), and proper-noun tracking across the chapter. Internal-mode spans from the marker map are attributed to the specified POV character as internal speech mode. If a line is genuinely unattributable, count it as "unattributed" and exclude it from every character's line count but note the total at the report's end.
 4. **Counts** dialogue lines per character per mode. Any character-mode pair below 6 lines is listed with its count and the "insufficient sample" note; no fingerprint is built for that pair. A POV character may clear the floor in spoken mode only, internal mode only, both, or neither.
 5. **Builds** a fingerprint per character-mode pair that clears the floor, across all five dimensions plus the identity label. For POV characters with both modes cleared, builds two fingerprints side by side.
 6. **Scans** each character-mode pair's dialogue for **drift**: any line where the fingerprint established within that mode shifts without narrative cause (register jump, sudden formalization or coarsening, sentence-length outlier, loss of a signature marker, contraction habit break). Narrative cause can be drunk, panicked, lying, performing, praying, addressing a superior, etc.; the subagent notes suspected cause if visible in context. Cross-mode shifts within a single POV character (spoken vs. internal) are NOT flagged as drift.
@@ -832,18 +879,18 @@ After strip verification passes, the Grammar/Spelling subagent completes, and th
     "unattributed_lines": 2,
     "characters": [
       {
-        "name": "Naida",
+        "name": "Maya",
         "is_pov": true,
         "modes": {
           "spoken": {
             "line_count": 24,
             "sample_status": "cleared",
             "fingerprint": {
-              "identity_label": "Gen Z, Latina, sardonic, code-switches Spanish",
+              "identity_label": "Gen Z, sardonic, terse, code-switches",
               "sentence_length": "short-clipped (avg 6 words)",
-              "diction_register": "informal, occasional profanity, Spanish code-switch when angry",
+              "diction_register": "informal, occasional profanity, code-switch when frustrated",
               "sentence_structure": "declaratives and fragments dominant; questions rare",
-              "signature_markers": "trailing ellipsis, 'chinga' as exclamation",
+              "signature_markers": "trailing ellipsis, rhetorical dismissals",
               "contractions": "always contracts"
             },
             "drift_flags": [
@@ -862,11 +909,11 @@ After strip verification passes, the Grammar/Spelling subagent completes, and th
             "line_count": 11,
             "sample_status": "cleared",
             "fingerprint": {
-              "identity_label": "Gen Z, Latina, sardonic, analytical, second-person self-address",
+              "identity_label": "Gen Z, sardonic, analytical, second-person self-address",
               "sentence_length": "medium (avg 13 words)",
-              "diction_register": "informal to dryly observational, occasional profanity, English-dominant with Spanish tags",
+              "diction_register": "informal to dryly observational, occasional profanity",
               "sentence_structure": "declaratives and sentence fragments; rhetorical questions common",
-              "signature_markers": "self-directed 'you,' catalog metaphors, naming the register ('thread count,' 'livestock catalog')",
+              "signature_markers": "self-directed 'you,' catalog metaphors",
               "contractions": "always contracts"
             },
             "drift_flags": [],
@@ -875,14 +922,14 @@ After strip verification passes, the Grammar/Spelling subagent completes, and th
         }
       },
       {
-        "name": "Ana",
+        "name": "Rosa",
         "is_pov": false,
         "modes": {
           "spoken": {
             "line_count": 18,
             "sample_status": "cleared",
             "fingerprint": {
-              "identity_label": "elder, formal, Old-World Mexican, measured",
+              "identity_label": "elder, formal, measured, rarely contracts",
               "sentence_length": "medium (avg 12 words)",
               "diction_register": "formal, measured, no profanity",
               "sentence_structure": "declaratives and questions balanced",
@@ -893,9 +940,9 @@ After strip verification passes, the Grammar/Spelling subagent completes, and th
             "attribution_flags": [
               {
                 "paragraph": 51,
-                "text": "Chinga, I told you already.",
-                "matches_character_better": "Naida",
-                "dimensions_matched": "diction register (Spanish code-switch, informal exclamation), contractions (always contracts)",
+                "text": "Come on, I told you already.",
+                "matches_character_better": "Maya",
+                "dimensions_matched": "diction register (informal, clipped), contractions (always contracts)",
                 "tier": "review"
               }
             ]
@@ -903,7 +950,7 @@ After strip verification passes, the Grammar/Spelling subagent completes, and th
         }
       },
       {
-        "name": "Doorman",
+        "name": "Stranger",
         "is_pov": false,
         "modes": {
           "spoken": {
@@ -932,7 +979,7 @@ The scoring rule is deliberately conservative. The goal exists to surface every 
 
 The Mode 1 report's new **Character Dialogue Check** section (positioned after Dialogue Tags Check) uses the subagent's JSON output directly. For each character clearing the floor, the section renders in this order:
 
-1. **Headline line**: `**[Name]** ([line count] lines) - [identity_label]`. Example: `**Naida** (24 lines) - Gen Z, Latina, sardonic, code-switches Spanish`.
+1. **Headline line**: `**[Name]** ([line count] lines) - [identity_label]`. Example: `**Maya** (24 lines) - Gen Z, sardonic, terse, code-switches`.
 2. **Fingerprint table** (one row per dimension: Sentence length, Diction register, Sentence structure, Signature markers, Contractions), so a reader can see the evidence behind the identity label.
 3. **Drift flags** (if any): a table with columns for paragraph, line text, shifted-from, shifted-to, suspected cause.
 4. **Attribution flags** (if any): a table with columns for paragraph, line text, matches-character-better, dimensions-matched.
@@ -974,7 +1021,7 @@ The evaluator is not a dumb dictionary lookup. It is a language model that can r
 
 1. **English dictionary check.** If the token is a standard English word, not a flag and not a count against the score.
 2. **Multi-language recognition.** If the token is a word in a language the evaluator can read (Spanish, French, German, Italian, Latin, etc.) and is used correctly in context, not a flag and not a count against the score. The evaluator must not treat "narcocorrido," "compadre," "Schadenfreude," "in medias res," etc. as spelling errors. Multilingual prose is prose, not an error state.
-3. **Proper noun recognition from context.** If the token is capitalized and context makes it clear it is a name (a person, place, band, brand, street, deity, etc.), not a flag and not a count against the score. Use the rest of the chapter, any MCP canon tools available (e.g., `vot-canon` for VoT manuscripts), or pattern recognition ("Smith said" tells you Smith is a name).
+3. **Proper noun recognition from context.** If the token is capitalized and context makes it clear it is a name (a person, place, band, brand, street, deity, etc.), not a flag and not a count against the score. Use the rest of the chapter, any external canon tools the author's project provides, or pattern recognition ("Smith said" tells you Smith is a name).
 4. **Coined or domain-specific terms.** If the token is not in any dictionary but is plausibly a coined term (e.g., "pwned," invented slang, technical jargon), attempt a web search to verify. If the search confirms it exists and is used correctly, not a flag and not a count.
 5. **Genuine unknowns.** Only after steps 1-4 fail: flag the token in an "Unknown words" table with location and let the author judge. Do NOT count these against the Spelling Score automatically. They are flagged for review, not errors by default.
 6. **Genuine misuses.** If a real word is used incorrectly in context (wrong sense, wrong language for the intended meaning, typo that happens to produce another real word), flag it as a misuse and count it against the Spelling Score.
@@ -1093,7 +1140,7 @@ Count -ly adverbs that are adjacent to (immediately before or after) a verb from
 **Weak verbs (default list, editable via user config)**:
 said, asked, replied, answered, whispered, shouted, cried, gasped, sighed, went, walked, ran, looked, saw, heard, was, were, felt, moved, turned, reached, opened, closed, stood, sat, came, got, put, took.
 
-**-ly noun exclusion (v1.22)**. Many English nouns end in -ly without being adverbs (assembly, family, supply, reply, rally, ally, anomaly, monopoly, bully, jolly, holly, etc.). These tokens MUST NOT be counted as weak adverbs. The detector consults `pwa_config.json:weak_adverb_noun_exclusions` (case-insensitive token match against the lowercased token, ignoring trailing punctuation) and skips any token that appears in the list. The seed config ships with the obvious common cases; authors append more as their manuscripts surface them. Optionally, if a lightweight POS tagger is available, the detector may additionally require the token to be tagged as RB (adverb) before counting; the noun-exclusion list is the minimum guarantee even without POS tagging. Surfaced by the Ulysses Book 6 Ch11.1 canary, where `assembly came` (assembly = noun, came = adjacent verb) was incorrectly flagged.
+**-ly noun exclusion (v1.22)**. Many English nouns end in -ly without being adverbs (assembly, family, supply, reply, rally, ally, anomaly, monopoly, bully, jolly, holly, etc.). These tokens MUST NOT be counted as weak adverbs. The detector consults `pwa_config.json:weak_adverb_noun_exclusions` (case-insensitive token match against the lowercased token, ignoring trailing punctuation) and skips any token that appears in the list. The seed config ships with the obvious common cases; authors append more as their manuscripts surface them. Optionally, if a lightweight POS tagger is available, the detector may additionally require the token to be tagged as RB (adverb) before counting; the noun-exclusion list is the minimum guarantee even without POS tagging. Surfaced during a canary run where `assembly came` (assembly = noun, came = adjacent verb) was incorrectly flagged.
 
 **Rationale**: The v1.13 definition included "-ly adverbs that substitute for a stronger verb," which was a judgment call. The explicit weak-verb list converts that into a mechanical check. Adverbs attached to strong, specific verbs ("he moved cautiously" vs. "he crept") are not flagged here because the strong verb is doing work; the adverb is texture, not a crutch. Authors who want stricter or looser enforcement edit the weak-verb list directly.
 
@@ -1118,9 +1165,6 @@ Compute average sentence length in words. Very long = > 30 words.
 - `paragraph`: 1-indexed paragraph number.
 - `rule`: `"very-long-sentence"`.
 - `word_count`: integer word count of the sentence.
-
-### Readability
-Use Flesch-Kincaid grade level on the whole document.
 
 ### Complex Paragraphs
 A paragraph is complex if its average sentence length > 20 words AND it contains > 3 sentences.
@@ -1150,7 +1194,7 @@ Count sentences whose first token is a coordinating conjunction (And, But, So, O
 - `rule`: `"ing-start"`.
 - `opener`: the first word (e.g., `"Walking"`).
 
-**Proper noun and non-participle exclusion (v1.22)**. Capitalized words ending in letter sequences that look -ing-adjacent (Crimson, Inferior, Practitioner, Hearing-in-name-only) are not always present participles. The detector MUST require the opener to actually be a present participle before counting. The minimum check: the token MUST end in the literal three letters `ing` (lowercased), AND the LITERAL lowercase form of the token MUST appear elsewhere in the chapter as written (not "the result of lowercasing every other token in the chapter" — that is a tautology because the capitalized opener itself lowercases into the inventory). If the literal-lowercase form never appears as written, the token is treated as a proper noun and skipped. The detector additionally consults `pwa_config.json:ing_starts_proper_noun_exclusions` (case-insensitive token match) and skips any token in the list. Authors populate the list with manuscript-specific character names (e.g., `sterling`, `standing` for surnames like Warren Sterling and Standing Deer that appear capitalized at sentence start as one-word callouts), and the routine seed ships with universal English indefinite-pronoun and common-noun -ing words (nothing, something, anything, everything, morning, evening, ceiling, ring, spring, string, thing, king, wing, during, according) so authors do not have to populate them per manuscript.
+**Proper noun and non-participle exclusion (v1.22)**. Capitalized words ending in letter sequences that look -ing-adjacent (Harrington, Inferior, Practitioner) are not always present participles. The detector MUST require the opener to actually be a present participle before counting. The minimum check: the token MUST end in the literal three letters `ing` (lowercased), AND the LITERAL lowercase form of the token MUST appear elsewhere in the chapter as written (not "the result of lowercasing every other token in the chapter" — that is a tautology because the capitalized opener itself lowercases into the inventory). If the literal-lowercase form never appears as written, the token is treated as a proper noun and skipped. The detector additionally consults `pwa_config.json:ing_starts_proper_noun_exclusions` (case-insensitive token match) and skips any token in the list. Authors populate the list with manuscript-specific character surnames or capitalized non-participle words, and the routine seed ships with universal English indefinite-pronoun and common-noun -ing words (nothing, something, anything, everything, morning, evening, ceiling, ring, spring, string, thing, king, wing, during, according) so authors do not have to populate them per manuscript.
 
 ### Slow Pacing
 
@@ -1178,7 +1222,7 @@ Acronym consistency: genre-branched.
 
 **Fiction genres (F1-F5)**: The check is styling-consistency only. For each distinct acronym or initialism (ALL-CAPS tokens of length 2+, excluding sentence-initial pronouns and common all-caps words like "I", "OK"), collapse variants to a base form (FBI / F.B.I. / F B I all collapse to FBI), then verify the styling is consistent across every occurrence. Flag any acronym that appears in more than one styling within the same document. Pass = 100% consistent styling. **No first-use-definition requirement is applied to fiction**, per CMOS Shop Talk's "Abbreviations in Fiction" (2020): "there's no need to spell out an unfamiliar abbreviation immediately upon first occurrence, and explaining an abbreviation by putting the spelled-out version in parentheses will not often be a good idea." Fiction introduces acronyms through context or dialogue, not via parenthetical glosses.
 
-**Typographic-emphasis exclusion (v1.22)**. ALL-CAPS sequences in fiction are sometimes typographic emphasis rather than acronyms — book/franchise titles styled in caps (`PALE HORSE`), in-world organization names, stylistic shouts, or non-character voice tags that survived stripping. The detector MUST consult `pwa_config.json:acronym_emphasis_exclusions` (case-insensitive substring match against the candidate token) and skip any token that appears in the list. The exclusion list is editable per manuscript; authors append entries as canaries surface them. Default empty. Surfaced by the Ulysses Book 6 Ch11.1 canary, where `THE BEAST` (paired-delimiter content that escaped Mode B stripping in a pre-v1.22 run) and `PALE HORSE` (in-world organization name styled as typographic emphasis in narrative prose) were both flagged as acronyms with inconsistent styling.
+**Typographic-emphasis exclusion (v1.22)**. ALL-CAPS sequences in fiction are sometimes typographic emphasis rather than acronyms — book/franchise titles styled in caps (`PALE HORSE`), in-world organization names, stylistic shouts, or non-character voice tags that survived stripping. The detector MUST consult `pwa_config.json:acronym_emphasis_exclusions` (case-insensitive substring match against the candidate token) and skip any token that appears in the list. The exclusion list is editable per manuscript; authors append entries as canaries surface them. Default empty. Surfaced during a canary run where paired-delimiter content that escaped Mode B stripping in a pre-v1.22 run, and in-world organization names styled as typographic emphasis in narrative prose, were both flagged as acronyms with inconsistent styling.
 
 **Non-fiction genres (N1-N5)**: The check is styling-consistency AND first-use definition. For each distinct acronym, verify (a) styling is consistent across every occurrence, and (b) the first occurrence either spells out the full form in parentheses on first use (e.g., "Chicago Manual of Style (CMOS)") OR the full form appears within the preceding sentence. Exempt list (bare use accepted without definition): FBI, CIA, NASA, DNA, USA, UK, EU, UN, NATO, AM, PM, CEO, CFO, CTO, PhD, MD, JD, BA, MA, BS, MS, UFO, GPS, HTML, CSS, HTTP, HTTPS, URL, API, AI, IT, TV, DVD, CD, PDF, FAQ, OK, ASAP, DIY, FYI, RSVP. This list is editable via user config.
 
@@ -1198,7 +1242,7 @@ Two parameters control detection; both are editable via user config.
 
 **Metric**: Count of distinct phrases that are at least 5 words long AND appear at least 3 times in the document. Threshold: < 3 such phrases.
 
-**Why 5/3 and not 3/2 (the PWA inheritance)**: At 3-word windows, English has massive unavoidable structural overlap ("he said to," "one of the," "she looked at") that flags as repetition but is not stylistic. Corpus-linguistics research (Biber, Conrad, and Cortes 2004) defines "lexical bundles" as recurrent 4+ word sequences; stylistic-tic detection in authorship work (Burrows, Hoover) typically uses 4-5 word minimums. At 5+ words, repetition is almost always a verbal tic or habitual phrasing. At 3 occurrences, coincidence is ruled out and a pattern is the simpler explanation. The canary run on Rocket Ch1.1 demonstrated why: 139 extra 3-word occurrences in a 4,500-word chapter is noise, not signal.
+**Why 5/3 and not 3/2 (the PWA inheritance)**: At 3-word windows, English has massive unavoidable structural overlap ("he said to," "one of the," "she looked at") that flags as repetition but is not stylistic. Corpus-linguistics research (Biber, Conrad, and Cortes 2004) defines "lexical bundles" as recurrent 4+ word sequences; stylistic-tic detection in authorship work (Burrows, Hoover) typically uses 4-5 word minimums. At 5+ words, repetition is almost always a verbal tic or habitual phrasing. At 3 occurrences, coincidence is ruled out and a pattern is the simpler explanation. An early canary run demonstrated why: 139 extra 3-word occurrences in a 4,500-word chapter is noise, not signal.
 
 **Tiered output**: The report emits two tables.
 
@@ -1214,7 +1258,7 @@ Two parameters control detection; both are editable via user config.
 
 The diagnostic top-20 uses the same schema under a sibling key `long_repeated_phrases.diagnostic_top_20`.
 
-**Genre sensitivity**: Universal by default (no per-genre matrix values). Repetition-as-voice is an author choice, not a genre expectation, so it does not belong in the genre threshold matrix. Authors with liturgical, ritual, or refrain-driven voices (e.g., Crimson Cabaret) override the occurrence minimum via user config rather than the genre matrix.
+**Genre sensitivity**: Universal by default (no per-genre matrix values). Repetition-as-voice is an author choice, not a genre expectation, so it does not belong in the genre threshold matrix. Authors with liturgical, ritual, or refrain-driven voices override the occurrence minimum via user config rather than the genre matrix.
 
 ### Dialogue Tags
 
@@ -1372,7 +1416,6 @@ The BLUF is the honest answer to "should I spend time on this report." If it say
 ## Sentence Length Check
 ## Sentence Variety
 ## Very Long Sentences
-## Readability Check
 ## Complex Paragraphs
 ## Sticky Sentences Check (Glue Index)
 ## Sentence Structure Check
@@ -1391,7 +1434,7 @@ The **Non-Character Voice Registers** section (v1.22) is rendered only when the 
 
 Diagnostic only — content in this section was stripped from the scored corpus and is NOT counted in any metric, gate, or goal. This section surfaces declared non-character voice register usage for author review.
 
-### [Register label, e.g., "Inner Beast"]
+### [Register label, e.g., "Omniscient Narrator"]
 
 [Optional one-sentence register description from the config.]
 
@@ -1399,7 +1442,7 @@ Diagnostic only — content in this section was stripped from the scored corpus 
 
 | # | Source paragraph | Words | Text |
 |---|------------------|-------|------|
-| 1 | 151 | 18 | Take him now. Put your hands on the shape he's about to wear. End what moves. |
+| 1 | 151 | 18 | The city never forgave its deserters. It only waited, patient as a debt collector. |
 ```
 
 If multiple Mode B registers were declared, render one subsection per register. Source paragraph numbers reference the **pre-strip source file** (since Mode B content was removed from the stripped file); the verbatim text lets the author Find-in-document in the original.
@@ -1478,7 +1521,6 @@ Each category is either **universal** (same threshold across all genres) or **ge
 | Passive Voice | genre-sensitive |
 | Emotion Tells | genre-sensitive |
 | Weak Adverbs | genre-sensitive |
-| Readability Grade | genre-sensitive |
 | Complex Paragraphs | genre-sensitive |
 | Glue Index | genre-sensitive |
 | Conjunction Starts | genre-sensitive |
@@ -1589,7 +1631,6 @@ Threshold syntax: same as the Category Table. Metric direction (higher/lower/in-
 | Passive Voice               | < 25.0          | < 25.0       | < 15.0       | < 22.0       | < 25.0       | < 30.0       | < 12.0       | < 22.0       | < 15.0       | < 40.0       | < 18.0       |
 | Emotion Tells               | < 20%           | < 15%        | < 20%        | < 30%        | < 22%        | < 25%        | < 10%        | < 28%        | < 15%        | < 8%         | < 15%        |
 | Weak Adverbs                | < 10.0          | < 7.0        | < 10.0       | < 13.0       | < 10.0       | < 10.0       | < 6.0        | < 10.0       | < 7.0        | < 8.0        | < 8.0        |
-| Readability Grade           | <= 8            | <= 12        | <= 8         | <= 9         | <= 10        | <= 10        | <= 8         | <= 10        | <= 8         | no cap       | <= 10        |
 | Complex Paragraphs          | < 15%           | < 25%        | < 10%        | < 15%        | < 22%        | < 20%        | < 8%         | < 20%        | < 10%        | < 45%        | < 15%        |
 | Glue Index                  | < 40%           | < 44%        | < 38%        | < 40%        | < 42%        | < 42%        | < 38%        | < 42%        | < 38%        | < 48%        | < 40%        |
 | Conjunction Starts          | < 9%            | < 12%        | < 10%        | < 9%         | < 9%         | < 10%        | < 6%         | < 10%        | < 7%         | < 5%         | < 8%         |
@@ -1630,7 +1671,6 @@ Goals achieved: 82% (18 of 22)
 Threshold adjustments from Universal:
 - Passive Voice: < 30.0 (Universal: < 25.0)
 - Slow Pacing: < 38% (Universal: < 30%)
-- Readability Grade: <= 10 (Universal: <= 8)
 - Emotion Tells: < 25% (Universal: < 20%)
 - [etc.]
 ```
@@ -1645,7 +1685,7 @@ These rules apply to every prompt in the routine, across every mode. They are no
 2. **All edits land in a clearly named copy.** The working-copy filename includes the word "copy" as a durable visual cue.
 3. **Pre-flight path check before any write.** Before any write operation:
    - Compare the target path to the source path (byte-for-byte, after path normalization). They must not match.
-   - Verify the target is under the configured output directory (default `C:\Users\elf10\ClaudeCoWork\PWA\`).
+   - Verify the target is under the configured output directory (the document's folder, `{{DOC_FOLDER}}`).
    - Verify the target filename contains "copy" (case-insensitive).
    - If any check fails, hard-stop. Do not write. Do not attempt to auto-correct the path. Report the failure to the user and wait for instructions.
 4. **Same-day collision handling.** If the target filename already exists from an earlier run today, append `-v2`, `-v3`, and so on. Never overwrite a prior output.
@@ -1675,7 +1715,6 @@ Each category is tagged with an auto-fix tier that Mode 2 and Mode 3 prompts con
 | Sentence Length | manual | Combining or splitting sentences is a craft call. |
 | Sentence Variety | manual | Requires restructuring. |
 | Very Long Sentences | manual | Same. |
-| Readability Grade | manual | Composite. |
 | Complex Paragraphs | manual | Requires splitting or restructuring. |
 | Glue Index | prompt | Specific patterns ("in the corner of the X" to possessive) are safe; general glue reduction is a rewrite. |
 | Conjunction Starts | manual | Removing "And"/"But" starts changes rhythm. |
@@ -1699,22 +1738,22 @@ v1.25 (2026-04-22). If thresholds, tiers, genre profiles, pre-processing rules, 
 
 ### Version History
 
-- v1.25 - **Scope of spelling-subagent reporting narrowed to step 6 only; calibration-ratio apparatus removed.** Per ELF directive after the Babydoll Book 2 Ch19.1 canary: the only spelling outcome the routine cares about is a genuine misspelled or misused English word. Foreign vocabulary, proper nouns from context, coined terms, and genuine unknowns are exclusions the subagent applies silently — not reported, not logged, not gated on. Removed `unknown_words_for_review` from the Grammar/Spelling subagent JSON schema. Removed the calibration-ratio floor (2.0 code-switching / 0.5 default) and the 0.0-hard-fail-on-chapters-over-1000-words gate from the v1.24 Validator Config section. Rewrote the "a clean chapter producing clean scores is the expected outcome" subsection to reflect the narrower architecture: the router validates what the subagent DID claim (substring checks, paragraph range, hallucination-marker filter, score math) rather than what it should have claimed alongside. A subagent that short-circuits and returns zero issues on a genuinely clean chapter produces the same output as one that did the work and found nothing, and the router does not try to distinguish them. Rewrote the Scans step of the Grammar/Spelling pass to reflect "walk Recognition Order internally, report only step 6 hits." Added explicit "Scope of spelling issues" note under the schema. Updated the Scope Note disclosure line to drop the unknown-words count. Companion changes: `subagents/grammar_spelling.md` v1.1 → v1.2 (removes `unknown_words_for_review` from schema, hard constraints, and substitution checklist; removes the `{{FOREIGN_VOCAB}}` placeholder since it no longer affects any gate); `router/validators/grammar_spelling.py` v0.1 → v0.2 (removes calibration-ratio computation, removes `series_context` / `foreign_vocab` parameters, keeps schema / score math / substring / paragraph-range / hallucination-marker gates). Net effect: one less config path for authors to maintain, one less apparatus for the subagent to ignore, and the router's remaining gates still catch the worst failure mode (citing text that is not in the stripped file).
-- v1.24 - **Subagent Architectural Rule formalized: subagents report, the router validates.** Surfaced by the Babydoll Book 2 Ch19.1 canary on 2026-04-22. The Grammar and Spelling subagent's hardened prompt (subagents/grammar_spelling.md v1.0) carried an explicit calibration gate with pass / fail thresholds. The subagent returned a result with `unknown_review_ratio: 0.0`, an empty `unknown_words_for_review` array, AND `passes_calibration: true` - violated the gate AND lied about violating it. The prompt instruction was ignored. Diagnosis: a subagent reading a long instruction tends to produce output that looks like what the instruction seems to want regardless of whether the underlying observation supports that output. Asking a subagent to self-reject is asking it to fight that gradient and it will not reliably do so. New top-level section "Subagent Architectural Rule: Subagents Report, the Router Validates" added between Performance Notes and Strip Verification, codifying: (1) subagent prompts ask only for observations and counts, no self-check branches; (2) router validates returned JSON deterministically (schema, range, cross-reference); (3) on validation failure, router re-dispatches once with a corrective instruction citing the specific failure; (4) on second failure, router hard-stops Mode 1 and reports to author; (5) calibration thresholds in subagent prompt files are documentation for the human reading the prompt, not instructions for the subagent. Section enumerates the per-subagent validator config the router carries (Grammar/Spelling unknown-review ratio floor + substring + paragraph checks; Strip Verification verdict-and-failures cross-check; Summary/Beat Sheet beat-count + named-character + word-range checks; Character Dialogue per-mode floor + substring + zero-cross-mode-drift checks; Report Verification recursive-only-one-level cited-claim checks). Also clarifies "a clean chapter producing clean scores is the expected outcome, not a subagent failure" - canaries against multi-pass-reviewed chapters often return Grammar 100% / Spelling 100%, and the audit trail (not the issue counts) is what the router validates for subagent integrity. Clean canaries are particularly good at surfacing subagent-integrity bugs: on a dirty chapter, issue counts can mask a missing audit trail; on a clean chapter, the missing audit trail is the only signal. Reframed the Grammar and Spelling section's `unknown_words_for_review` paragraph from "informational sanity-check list" to "audit trail the router validates" and added a pointer to the architectural rule. Created `PWA/routine/subagents/` directory with `grammar_spelling.md` v1.0 as the first hardened, versioned subagent prompt template (router substitutes `{{PLACEHOLDERS}}` before dispatch). The next concrete unblocker before skill extraction is the router-side validator (Python module that consumes subagent JSON, runs the per-subagent validator config from this section, and re-dispatches on failure); after that, Mode 1 assembly and end-to-end Report Verification become the final pre-skill gates.
+- v1.25 - **Scope of spelling-subagent reporting narrowed to step 6 only; calibration-ratio apparatus removed.** The only spelling outcome the routine cares about is a genuine misspelled or misused English word. Foreign vocabulary, proper nouns from context, coined terms, and genuine unknowns are exclusions the subagent applies silently — not reported, not logged, not gated on. Removed `unknown_words_for_review` from the Grammar/Spelling subagent JSON schema. Removed the calibration-ratio floor (2.0 code-switching / 0.5 default) and the 0.0-hard-fail-on-chapters-over-1000-words gate from the v1.24 Validator Config section. Rewrote the "a clean chapter producing clean scores is the expected outcome" subsection to reflect the narrower architecture: the router validates what the subagent DID claim (substring checks, paragraph range, hallucination-marker filter, score math) rather than what it should have claimed alongside. A subagent that short-circuits and returns zero issues on a genuinely clean chapter produces the same output as one that did the work and found nothing, and the router does not try to distinguish them. Rewrote the Scans step of the Grammar/Spelling pass to reflect "walk Recognition Order internally, report only step 6 hits." Added explicit "Scope of spelling issues" note under the schema. Updated the Scope Note disclosure line to drop the unknown-words count. Companion changes: `subagents/grammar_spelling.md` v1.1 → v1.2 (removes `unknown_words_for_review` from schema, hard constraints, and substitution checklist; removes the `{{FOREIGN_VOCAB}}` placeholder since it no longer affects any gate); `router/validators/grammar_spelling.py` v0.1 → v0.2 (removes calibration-ratio computation, removes `series_context` / `foreign_vocab` parameters, keeps schema / score math / substring / paragraph-range / hallucination-marker gates). Net effect: one less config path for authors to maintain, one less apparatus for the subagent to ignore, and the router's remaining gates still catch the worst failure mode (citing text that is not in the stripped file).
+- v1.24 - **Subagent Architectural Rule formalized: subagents report, the router validates.** Surfaced during an end-to-end canary dry run on 2026-04-22. The Grammar and Spelling subagent's hardened prompt (subagents/grammar_spelling.md v1.0) carried an explicit calibration gate with pass / fail thresholds. The subagent returned a result with `unknown_review_ratio: 0.0`, an empty `unknown_words_for_review` array, AND `passes_calibration: true` - violated the gate AND lied about violating it. The prompt instruction was ignored. Diagnosis: a subagent reading a long instruction tends to produce output that looks like what the instruction seems to want regardless of whether the underlying observation supports that output. Asking a subagent to self-reject is asking it to fight that gradient and it will not reliably do so. New top-level section "Subagent Architectural Rule: Subagents Report, the Router Validates" added between Performance Notes and Strip Verification, codifying: (1) subagent prompts ask only for observations and counts, no self-check branches; (2) router validates returned JSON deterministically (schema, range, cross-reference); (3) on validation failure, router re-dispatches once with a corrective instruction citing the specific failure; (4) on second failure, router hard-stops Mode 1 and reports to author; (5) calibration thresholds in subagent prompt files are documentation for the human reading the prompt, not instructions for the subagent. Section enumerates the per-subagent validator config the router carries (Grammar/Spelling unknown-review ratio floor + substring + paragraph checks; Strip Verification verdict-and-failures cross-check; Summary/Beat Sheet beat-count + named-character + word-range checks; Character Dialogue per-mode floor + substring + zero-cross-mode-drift checks; Report Verification recursive-only-one-level cited-claim checks). Also clarifies "a clean chapter producing clean scores is the expected outcome, not a subagent failure" - canaries against multi-pass-reviewed chapters often return Grammar 100% / Spelling 100%, and the audit trail (not the issue counts) is what the router validates for subagent integrity. Clean canaries are particularly good at surfacing subagent-integrity bugs: on a dirty chapter, issue counts can mask a missing audit trail; on a clean chapter, the missing audit trail is the only signal. Reframed the Grammar and Spelling section's `unknown_words_for_review` paragraph from "informational sanity-check list" to "audit trail the router validates" and added a pointer to the architectural rule. Created `canary/references/subagents/` directory with `grammar_spelling.md` v1.0 as the first hardened, versioned subagent prompt template (router substitutes `{{PLACEHOLDERS}}` before dispatch). The next concrete unblocker before skill extraction is the router-side validator (Python module that consumes subagent JSON, runs the per-subagent validator config from this section, and re-dispatches on failure); after that, Mode 1 assembly and end-to-end Report Verification become the final pre-skill gates.
 
-- v1.23 - **Strip engine + tokenizer build-out, plus -ing morphological-check precision fix.** Built `PWA/routine/strip_engine.py` implementing the v1.22 contract end-to-end: per-manuscript-then-routine config layering with array concatenation, all five header strip rule types (`line_starts_with` with optional `and_contains`, `exact_line`, `markdown_heading` with `levels`, `html_tag` with user-configurable `consume`, `regex` with optional flags), three-mode paired-delimiter taxonomy (Mode A markers stripped + interior kept + spans recorded against final stripped file; Mode B markers + interior stripped + spans recorded against pre-strip source; Mode C silent strip), undeclared paired-delimiter warning system, three output files (stripped prose, marker map JSON, strip log JSON), Mode-A-without-`--pov` guardrail. Built `PWA/routine/tokenizer.py` covering every tokenizer-eligible category in the Category Table with the v1.22 exclusion lists wired in: `acronym_emphasis_exclusions` (case-insensitive substring match against ALL-CAPS sequences declared as typographic emphasis), `weak_adverb_noun_exclusions` (skips -ly nouns adjacent to verbs), `ing_starts_proper_noun_exclusions` (skips declared non-participle openers). All `flagged_items` schemas match the per-category specification with the 50-item-per-category truncation rule. **Morphological-check precision fix.** The v1.22 -ing Starts heuristic intent was: token ends in literal `ing` AND its literal lowercase form appears elsewhere in the chapter (a real present-participle leaves lowercase footprints; a proper noun like `Sterling` does not). The v1.22 prose was ambiguous and the first tokenizer implementation built `lower_inventory = {w.lower() for w in tokens}` which is tautologically true for the capitalized opener itself (because lowercasing is applied to every token in the chapter, the capitalized opener's lowercase form is always present). Surfaced by Ulysses Book 6 Ch11.1: `Sterling` (a character surname, 5 capitalized occurrences, 0 lowercase) passed the check. Fixed by switching to `literal_token_set = set(raw_inventory)` (case-preserved) and testing `first_lower in literal_token_set` — only true if the literal lowercase form appears as written. Clarified the `_standards.md` heuristic prose accordingly. **Seed `ing_starts_proper_noun_exclusions` populated.** Routine-level config seed previously empty; populated with 15 universal English entries (`nothing`, `something`, `anything`, `everything`, `morning`, `evening`, `ceiling`, `ring`, `spring`, `string`, `thing`, `king`, `wing`, `during`, `according`) covering indefinite pronouns and high-frequency common nouns ending in -ing. Authors continue to populate per-manuscript with character surnames (Ulysses adds `sterling`, `standing`). **Canary validation.** Re-ran tokenizer on Ulysses Ch11.1 against the v1.23 implementation: -ing flags reduced from 20 to 6 (Moving, Coordinating, Watching, Waiting, Sitting, Watching — all legitimate present-participle openers); zero PALE HORSE / THE BEAST acronym false positives; `assembly came` weak-adverb false positive suppressed. Both engine and tokenizer are now skill-extraction candidates pending verifier subagent extraction, first-run interview as callable routine, restart-prompt edit menu as callable routine, and a second canary on a Mode-A-only chapter.
+- v1.23 - **Strip engine + tokenizer build-out, plus -ing morphological-check precision fix.** Built `canary/scripts/strip_engine.py` implementing the v1.22 contract end-to-end: per-manuscript-then-routine config layering with array concatenation, all five header strip rule types (`line_starts_with` with optional `and_contains`, `exact_line`, `markdown_heading` with `levels`, `html_tag` with user-configurable `consume`, `regex` with optional flags), three-mode paired-delimiter taxonomy (Mode A markers stripped + interior kept + spans recorded against final stripped file; Mode B markers + interior stripped + spans recorded against pre-strip source; Mode C silent strip), undeclared paired-delimiter warning system, three output files (stripped prose, marker map JSON, strip log JSON), Mode-A-without-`--pov` guardrail. Built `canary/scripts/tokenizer.py` covering every tokenizer-eligible category in the Category Table with the v1.22 exclusion lists wired in: `acronym_emphasis_exclusions` (case-insensitive substring match against ALL-CAPS sequences declared as typographic emphasis), `weak_adverb_noun_exclusions` (skips -ly nouns adjacent to verbs), `ing_starts_proper_noun_exclusions` (skips declared non-participle openers). All `flagged_items` schemas match the per-category specification with the 50-item-per-category truncation rule. **Morphological-check precision fix.** The v1.22 -ing Starts heuristic intent was: token ends in literal `ing` AND its literal lowercase form appears elsewhere in the chapter (a real present-participle leaves lowercase footprints; a proper noun like `Sterling` does not). The v1.22 prose was ambiguous and the first tokenizer implementation built `lower_inventory = {w.lower() for w in tokens}` which is tautologically true for the capitalized opener itself (because lowercasing is applied to every token in the chapter, the capitalized opener's lowercase form is always present). Surfaced during a canary run where a capitalized surname (5 occurrences, 0 lowercase) passed the check despite never appearing as a lowercase participle. Fixed by switching to `literal_token_set = set(raw_inventory)` (case-preserved) and testing `first_lower in literal_token_set` — only true if the literal lowercase form appears as written. Clarified the `_standards.md` heuristic prose accordingly. **Seed `ing_starts_proper_noun_exclusions` populated.** Routine-level config seed previously empty; populated with 15 universal English entries (`nothing`, `something`, `anything`, `everything`, `morning`, `evening`, `ceiling`, `ring`, `spring`, `string`, `thing`, `king`, `wing`, `during`, `according`) covering indefinite pronouns and high-frequency common nouns ending in -ing. Authors continue to populate per-manuscript with character surnames and other capitalized non-participle openers. **Canary validation.** Re-ran tokenizer against the v1.23 implementation: -ing flags reduced from 20 to 6 (all legitimate present-participle openers); acronym false positives on ALL-CAPS typographic emphasis suppressed; `assembly came` weak-adverb false positive suppressed. Both engine and tokenizer are now skill-extraction candidates pending verifier subagent extraction, first-run interview as callable routine, restart-prompt edit menu as callable routine, and a second canary on a Mode-A-only chapter.
 
-- v1.22 - **Config-driven preprocessing.** Replaced every hardcoded preprocessing rule with a single JSON config file (`pwa_config.json`) read from a per-manuscript override path first, then a routine-level default. On first run the routine walks the author through a structured setup interview (manuscript format, header strip rules, paired delimiters, exclusion lists) and writes the result to disk. On subsequent runs the config loads silently with a one-line summary and a `Update? [y/N]` prompt; default `N` proceeds with the loaded config, `y` drops into a structured edit menu (AskUserQuestion picker in Cowork, numbered text menu in CLI/Code; the routine detects context). Single rolling `.bak` of the prior config is kept on each save; multi-backup rotation deliberately rejected since the config is git-tracked and small. Per-manuscript override semantics are shallow-merge with array concatenation; manuscript entries appended after routine entries (so manuscript entries take *lower* priority under first-match-wins, matching the file lookup order). **Generalized paired-delimiter handling.** The v1.21 INTERNAL DIALOGUE rule generalized to a three-mode taxonomy declared per pair in the config: **Mode A** (character interiority, scored, attributed to a named POV character — v1.21 behavior); **Mode B** (non-character voice register, markers AND content stripped from scored corpus, surfaced in a dedicated diagnostic-only report section with explicit "not scored" disclosure); **Mode C** (production-only strip, markers AND content stripped silently with no logging). The v1.22 patch was surfaced by the Ulysses Book 6 Ch11.1 canary, which contained a `[[THE BEAST: ... ]]` paired-delimiter block that v1.21's literal-INTERNAL-DIALOGUE-only rule passed through intact, leaking author-side production markers into the scored corpus and triggering false-positive acronym flags (`THE`, `BEAST`). The Mode B classification handles "the vampire's starved soul" as non-character atmospheric voice — neither a named character (no Mode A fit) nor production noise (no Mode C fit). Schema designed author-agnostic: no manuscript-specific terminology (no "Beast," no "VoT") in `_standards.md`; the author declares opener/closer/mode/register_label per pair at setup. Disambiguation is array order, first-match-wins. Backward-compatible: the v1.21 INTERNAL DIALOGUE rule becomes a Mode A entry in the seed default config. **Header strip rule schema.** Five `type` values cover the field: `line_starts_with` (with optional `and_contains` substring requirement), `exact_line`, `markdown_heading` (with `levels` array), `html_tag` (with `tags` array and user-configurable `consume`: `tag_block`, `opener_line`, `closer_line`, `opener_and_closer_lines`; HTML tag selection is per-author since the routine ships with no HTML tag rules), `regex` (escape hatch). Each rule has a human-readable `label` used in the edit menu and strip log. **Strip log.** Sibling JSON file alongside the marker map records which rules fired, which had zero matches, and a summary line; surfaces dead rules and manuscript-format mismatches. **Undeclared paired-delimiter warning.** During strip, any `[[<TAG>: ...]]`-shaped span that no declared `paired_delimiters` entry matched emits a warning to the strip log naming the excerpt and paragraph; informational, not blocking; surfaces the exact failure mode (silent leakage of author markers into scored corpus) that produced this patch. **Marker map schema extended** with `paired_delimiter_declarations` (mirrors active config so the marker map is self-describing), `non_character_voice_spans` array (Mode B spans, paragraph numbers reference the pre-strip source file since Mode B content is gone from the stripped file). **Three secondary fixes** bundled, all aligned with the v1.15 "editable exclusion" pattern: (1) Acronym Consistency consults `acronym_emphasis_exclusions` (case-insensitive substring match) and skips ALL-CAPS sequences declared as typographic emphasis (book titles, in-world organization names, stylistic shouts) — surfaced by `PALE HORSE` and `THE BEAST` flagged as inconsistent acronyms in the Ulysses canary; (2) Weak Adverbs consults `weak_adverb_noun_exclusions` and skips -ly nouns (assembly, family, supply, reply, rally) — surfaced by `assembly came` flagged as weak-adverb adjacency in the Ulysses canary; (3) -ing Starts requires actual present-participle form (token ends in `ing` AND is recognizable participle OR appears lowercase elsewhere in chapter) and consults `ing_starts_proper_noun_exclusions` to skip declared proper nouns and non-participle words (Crimson, Inferior, Practitioner) — surfaced by capitalized proper-noun openers flagged as -ing starts in the Ulysses canary. Default exclusion lists ship sensibly (empty for acronym emphasis and -ing proper nouns, populated for weak-adverb -ly nouns); authors append per-manuscript as canaries surface false positives. **Report Format extensions:** Scope Note now includes active config path and paired-delimiter mode declarations; new optional Non-Character Voice Registers section (rendered only when Mode B spans exist) with diagnostic-only disclosure header, per-register subsection format with source paragraph + word count + verbatim text columns. **Report Verification Pass extensions:** new check #10 audits the Non-Character Voice Registers section against the marker map (every Mode B span rendered; section disclosure language present; Mode B content absent from stripped file = FAIL since the strip pipeline didn't honor the Mode B contract); new check #11 audits config metadata and strip log (active config path in Scope Note; strip log present; strip log labels match config rule labels). Verifier inputs extended with active `pwa_config.json` path and strip log JSON path. Verifier JSON schema extended with `non_character_voice_checks` and `config_and_strip_log_checks` blocks. **Reuse paragraph rewritten:** all three modes now read from `pwa_config.json` rather than the per-mode preprocessing question; legacy `user_config.json.preprocessing` field retained for backward compatibility but Mode 3 should migrate values into `pwa_config.json` on first read. Rationale: the v1.21 patch closed the structural-check gap from v1.10 but exposed a different gap — preprocessing rules were still hardcoded into the strip script, which made every new manuscript convention a code edit and produced bugs (Naida hardcoded as POV, `[[THE BEAST]]` not stripped) the architecture should have prevented. Moving rules to data closes that gap and makes the same routine work against any manuscript format any author declares.
+- v1.22 - **Config-driven preprocessing.** Replaced every hardcoded preprocessing rule with a single JSON config file (`pwa_config.json`) read from a per-manuscript override path first, then a routine-level default. On first run the routine walks the author through a structured setup interview (manuscript format, header strip rules, paired delimiters, exclusion lists) and writes the result to disk. On subsequent runs the config loads silently with a one-line summary and a `Update? [y/N]` prompt; default `N` proceeds with the loaded config, `y` drops into a structured edit menu (AskUserQuestion picker in Cowork, numbered text menu in CLI/Code; the routine detects context). Single rolling `.bak` of the prior config is kept on each save; multi-backup rotation deliberately rejected since the config is git-tracked and small. Per-manuscript override semantics are shallow-merge with array concatenation; manuscript entries appended after routine entries (so manuscript entries take *lower* priority under first-match-wins, matching the file lookup order). **Generalized paired-delimiter handling.** The v1.21 INTERNAL DIALOGUE rule generalized to a three-mode taxonomy declared per pair in the config: **Mode A** (character interiority, scored, attributed to a named POV character — v1.21 behavior); **Mode B** (non-character voice register, markers AND content stripped from scored corpus, surfaced in a dedicated diagnostic-only report section with explicit "not scored" disclosure); **Mode C** (production-only strip, markers AND content stripped silently with no logging). The v1.22 patch was surfaced by a canary where a Mode B paired-delimiter block passed through intact because v1.21's rule only handled one specific opener, leaking author-side production markers into the scored corpus and triggering false-positive acronym flags. The Mode B classification handles non-character atmospheric voice — neither a named character (no Mode A fit) nor production noise (no Mode C fit). Schema designed author-agnostic: no manuscript-specific terminology in `_standards.md`; the author declares opener/closer/mode/register_label per pair at setup. Disambiguation is array order, first-match-wins. **Header strip rule schema.** Five `type` values cover the field: `line_starts_with` (with optional `and_contains` substring requirement), `exact_line`, `markdown_heading` (with `levels` array), `html_tag` (with `tags` array and user-configurable `consume`: `tag_block`, `opener_line`, `closer_line`, `opener_and_closer_lines`; HTML tag selection is per-author since the routine ships with no HTML tag rules), `regex` (escape hatch). Each rule has a human-readable `label` used in the edit menu and strip log. **Strip log.** Sibling JSON file alongside the marker map records which rules fired, which had zero matches, and a summary line; surfaces dead rules and manuscript-format mismatches. **Undeclared paired-delimiter warning.** During strip, any `[[<TAG>: ...]]`-shaped span that no declared `paired_delimiters` entry matched emits a warning to the strip log naming the excerpt and paragraph; informational, not blocking; surfaces the exact failure mode (silent leakage of author markers into scored corpus) that produced this patch. **Marker map schema extended** with `paired_delimiter_declarations` (mirrors active config so the marker map is self-describing), `non_character_voice_spans` array (Mode B spans, paragraph numbers reference the pre-strip source file since Mode B content is gone from the stripped file). **Three secondary fixes** bundled, all aligned with the v1.15 "editable exclusion" pattern: (1) Acronym Consistency consults `acronym_emphasis_exclusions` (case-insensitive substring match) and skips ALL-CAPS sequences declared as typographic emphasis (book titles, in-world organization names, stylistic shouts); (2) Weak Adverbs consults `weak_adverb_noun_exclusions` and skips -ly nouns (assembly, family, supply, reply, rally) — surfaced by `assembly came` flagged as weak-adverb adjacency in a canary run; (3) -ing Starts requires actual present-participle form (token ends in `ing` AND is recognizable participle OR appears lowercase elsewhere in chapter) and consults `ing_starts_proper_noun_exclusions` to skip declared proper nouns and non-participle words (Harrington, Inferior, Practitioner) — surfaced by capitalized proper-noun openers flagged as -ing starts in a canary run. Default exclusion lists ship sensibly (empty for acronym emphasis and -ing proper nouns, populated for weak-adverb -ly nouns); authors append per-manuscript as canaries surface false positives. **Report Format extensions:** Scope Note now includes active config path and paired-delimiter mode declarations; new optional Non-Character Voice Registers section (rendered only when Mode B spans exist) with diagnostic-only disclosure header, per-register subsection format with source paragraph + word count + verbatim text columns. **Report Verification Pass extensions:** new check #10 audits the Non-Character Voice Registers section against the marker map (every Mode B span rendered; section disclosure language present; Mode B content absent from stripped file = FAIL since the strip pipeline didn't honor the Mode B contract); new check #11 audits config metadata and strip log (active config path in Scope Note; strip log present; strip log labels match config rule labels). Verifier inputs extended with active `pwa_config.json` path and strip log JSON path. Verifier JSON schema extended with `non_character_voice_checks` and `config_and_strip_log_checks` blocks. **Reuse paragraph rewritten:** all three modes now read from `pwa_config.json` rather than the per-mode preprocessing question; legacy `user_config.json.preprocessing` field retained for backward compatibility but Mode 3 should migrate values into `pwa_config.json` on first read. Rationale: the v1.21 patch closed the structural-check gap from v1.10 but exposed a different gap — preprocessing rules were still hardcoded into the strip script, which made every new manuscript convention a code edit and produced bugs the architecture should have prevented. Moving rules to data closes that gap and makes the same routine work against any manuscript format any author declares.
 
-- v1.21 - Added **internal-dialogue handling** to Pre-processing and **two-mode (spoken + internal) fingerprint analysis** to the Character Dialogue Consistency Pass. Surfaced by the Ulysses Book 6 Ch11.1 canary preparation: the chapter contains 11 `[[INTERNAL DIALOGUE: ... ]]` blocks, and the v1.20 default of stripping the entire block (markers + content) would have thrown away the richest voice signal in the chapter — the POV character speaking to themselves in a sustained second-person interior voice — exactly the data a Character Dialogue Consistency pass needs most. The fix: paired-delimiter markers wrapping interiority are stripped (markers only), the prose between them is kept in the scored denominator, and a sibling marker map JSON file records the paragraph ranges of those internal-mode spans so the Character Dialogue subagent can attribute them to the POV character as a separate speech mode. POV characters now get two fingerprints side by side (spoken from quoted dialogue, internal from marker-map spans), each with its own identity label and five-dimension table. Drift within each mode is flagged normally; **drift between modes is explicitly NOT flagged** (the gap between how a person speaks and how they think is expected and would generate false positives on every POV chapter). The 6-line sample floor applies per mode; a POV character can clear the floor in spoken only, internal only, both, or neither. Attribution mismatch in the internal mode catches POV slippage (the author briefly inhabiting a different consciousness inside a POV chapter), a real craft failure mode that pre-v1.21 had no way to surface. Authors with other paired conventions (`<<THINKING>>...</THINKING>>`, asterisk-wrapped italics) can declare the opener/closer pair and inherit the same markers-only-kept-content rule. Added marker map file schema, updated subagent input list, updated subagent JSON example to show two-mode structure (`modes.spoken`, `modes.internal`) for Naida with both fingerprints rendered side by side. Extended Report Verification Pass check #9 to confirm: each mode rendered as its own block with headline + identity label + fingerprint table + flag tables; per-mode floor handling for insufficient-sample modes; no flags emitted for cross-mode shifts (FIX if found); Scope Note disclosure names which mode(s) ran per POV character. Extended verifier JSON schema with `marker_map_present`, `pov_characters_with_two_modes`, `modes_rendered_per_pov`, `cross_mode_drift_flags_present`, `scope_note_names_modes_per_pov`. Old VoT default (strip markers + content) remains selectable but requires explicit opt-in since it degrades Character Dialogue Consistency analysis for the POV character. Rationale: interiority is dialogue the character has not said aloud, and treating it as prose alongside spoken dialogue collapses the two voices into a single denominator that obscures both. The fix preserves both signals and reports them side by side with the explicit constraint that natural variation between spoken and internal voice is expected, not a defect.
+- v1.21 - Added **internal-dialogue handling** to Pre-processing and **two-mode (spoken + internal) fingerprint analysis** to the Character Dialogue Consistency Pass. Surfaced during a canary preparation where a chapter contained many paired-delimiter interiority blocks, and the v1.20 default of stripping the entire block (markers + content) would have thrown away the richest voice signal in the chapter — the POV character speaking to themselves — exactly the data a Character Dialogue Consistency pass needs most. The fix: paired-delimiter markers wrapping interiority are stripped (markers only), the prose between them is kept in the scored denominator, and a sibling marker map JSON file records the paragraph ranges of those internal-mode spans so the Character Dialogue subagent can attribute them to the POV character as a separate speech mode. POV characters now get two fingerprints side by side (spoken from quoted dialogue, internal from marker-map spans), each with its own identity label and five-dimension table. Drift within each mode is flagged normally; **drift between modes is explicitly NOT flagged** (the gap between how a person speaks and how they think is expected and would generate false positives on every POV chapter). The 6-line sample floor applies per mode; a POV character can clear the floor in spoken only, internal only, both, or neither. Attribution mismatch in the internal mode catches POV slippage (the author briefly inhabiting a different consciousness inside a POV chapter), a real craft failure mode that pre-v1.21 had no way to surface. Authors with any paired conventions can declare the opener/closer pair and inherit the same markers-only-kept-content rule. Added marker map file schema, updated subagent input list, updated subagent JSON example to show two-mode structure (`modes.spoken`, `modes.internal`) for the POV character with both fingerprints rendered side by side. Extended Report Verification Pass check #9 to confirm: each mode rendered as its own block with headline + identity label + fingerprint table + flag tables; per-mode floor handling for insufficient-sample modes; no flags emitted for cross-mode shifts (FIX if found); Scope Note disclosure names which mode(s) ran per POV character. Extended verifier JSON schema with `marker_map_present`, `pov_characters_with_two_modes`, `modes_rendered_per_pov`, `cross_mode_drift_flags_present`, `scope_note_names_modes_per_pov`. The "strip markers + content" behavior is now Mode C and remains selectable when interiority analysis is not desired. Rationale: interiority is dialogue the character has not said aloud, and treating it as prose alongside spoken dialogue collapses the two voices into a single denominator that obscures both. The fix preserves both signals and reports them side by side with the explicit constraint that natural variation between spoken and internal voice is expected, not a defect.
 
 - v1.20 - Added **Character Dialogue Consistency Pass** as a subagent-delegated Mode 1 routine step, closing the second of the two structural checks flagged in v1.10 as pending (the other being the Beat Sheet, delivered in v1.10). Category Table row 23: "Character Dialogue Consistency" with a zero-flags threshold and a 6-line-per-character sample floor; row is N/A and denominator-exempt when no character clears the floor. Subagent receives only the chapter (no canon, no prior chapters, no character profiles) and builds a per-character fingerprint across an identity label (headline phrase like "Gen Z, Latina, sardonic, code-switches Spanish" or "elder, formal, Old-World Mexican, measured") plus five dimensions: sentence length distribution, diction register, sentence structure, signature markers, contractions use. Subagent scans for two failure modes: **drift** (a line where a character's established fingerprint shifts without narrative cause) and **attribution mismatch** (a tagged line whose content, register, or structure matches a different character's fingerprint better). Both failure modes are judgment-sensitive: the author reviews each flag because a valid narrative reason (drunk, panicked, lying, performing) can justify a shift. Scoring rule is deliberately conservative: any flag = goal missed, on the principle that surfacing every shift for author review is the purpose. New Mode 1 Character Dialogue Check section (positioned after Dialogue Tags Check) renders headline line + fingerprint table + drift flags table + attribution flags table per character, with "insufficient sample" listing for characters below the 6-line floor. Mode 3 never auto-fixes; every flag is prompt-tier with AskUserQuestion review. Added Scope Note disclosure line, added check #9 to Report Verification Pass (confirms the section matches the subagent JSON and flagged text is chapter-verifiable), added character_dialogue_checks array to verifier JSON schema, added Step 3c to Mode 1 pipeline. Rationale: per-character voice consistency is the second chapter-scale check that pattern-matching software cannot do; the v1.10 entry flagged Per-Character Dialogue as the primary case for why a language-model evaluator is a different tool than PWA. Scope is deliberately chapter-internal only because the routine assumes only the chapter as input; cross-chapter drift and canon-consistency are out of scope and would require a different tool with manuscript-wide context. Identity label added per user feedback: the fingerprint needed to lead with a human-readable tag that says what the voice IS (generation, cultural background, register stance, defining attitude), not just the five component measurements, so the report leads with recognition rather than evidence.
 
 - v1.19 - Added **actionable flagged-item output** across every sentence-, paragraph-, and phrase-level category. Prior versions of the tokenizer emitted counts and pattern summaries but not the actual text that matched, so a report reading "Style Score: 99.6%. Flagged sentences: 2 of 548. Top patterns: `really X -> stronger X` (1), `acquired -> gained` (1)" left the author with no way to find either sentence without re-reading the chapter. That is the exact PWA-style opacity this routine exists to correct. The fix: tokenizer now emits a `flagged_items` array for every applicable category with per-item `text` (verbatim sentence, paragraph preview, or phrase), `paragraph` (1-indexed paragraph number, findable in the document), `rule` or `pattern` (which heuristic matched), and category-specific context fields (matched_phrase, filter_verb + emotion_word, adverb + verb, opener, word_count, etc.). Report sections now emit the flagged text in a table: Style shows the sentence plus the pattern, Weak Adverbs shows the adverb/verb pair in context, Emotion Tells shows the filter construction in its sentence, Slow Pacing shows the paragraph preview, Very Long Sentences shows the sentence, Complex Paragraphs shows the paragraph preview, Conjunction Starts and -ing Starts show the sentence, Long Repeated Phrases gains per-occurrence paragraph numbers, Dialogue Tags shows the tag line classified. Truncation rule: 50 items per category max, truncation disclosed in the section header. Added Flagged Items Schema to Tokenizer requirements, extended every Detection Heuristics category with a Flagged items subsection specifying fields, rewrote Scoring Rule #5 to require text not just counts, rewrote the Report Format Writing Style Check example to show pattern-summary + flagged-sentence two-table layout. Rationale: the routine's thesis is that every flag must be traceable to a line the author can read, argue with, and act on. Counts without text fail that thesis.
 
-- v1.18 - Added **report-language check** to the Report Verification Pass. The v1.17 verifier caught factual errors (narrative, metric, threshold, disclosure, placeholder) but had no explicit rule against prose that exposes the writer's reasoning process. The v3 canary shipped with a BLUF bullet containing a mid-sentence self-correction ("the stddev is 7.97 which is above the baseline of 9 in absolute terms (wait, 7.97 is below 9.0)") that was grammatically fine, numerically defensible, and narratively disqualifying: a deliverable that reads like a scratchpad corrodes reader trust at exactly the moment trust needs to be built. The v1.18 check flags: mid-sentence self-corrections, visible uncertainty hedges ("I think," "probably," "maybe" in metric prose), thinking-out-loud interjections ("wait," "actually," "hmm"), self-referential process notes ("the evaluator noticed," "after reconsidering"), unresolved compound verdicts ("MET but barely," "close to threshold (unclear)"), and dash variants beyond single hyphen (per CLAUDE.md response formatting standard). Always a FIX-tier verdict (not FAIL): the verifier rewrites the offending line as final-verdict prose preserving the numeric claim. Applies to BLUF, verdict lines, Structural Observations, and any main-context-assembled prose. Does NOT apply to subagent-produced What Happened/Beat Sheet or tokenizer metric tables. Rationale: reports are deliverables, not scratchpads. The article thesis is that opaque metrics corrode trust; prose that narrates the writer's in-progress reasoning corrodes trust the same way.
+- v1.18 - Added **report-language check** to the Report Verification Pass. The v1.17 verifier caught factual errors (narrative, metric, threshold, disclosure, placeholder) but had no explicit rule against prose that exposes the writer's reasoning process. The v3 canary shipped with a BLUF bullet containing a mid-sentence self-correction ("the stddev is 7.97 which is above the baseline of 9 in absolute terms (wait, 7.97 is below 9.0)") that was grammatically fine, numerically defensible, and narratively disqualifying: a deliverable that reads like a scratchpad corrodes reader trust at exactly the moment trust needs to be built. The v1.18 check flags: mid-sentence self-corrections, visible uncertainty hedges ("I think," "probably," "maybe" in metric prose), thinking-out-loud interjections ("wait," "actually," "hmm"), self-referential process notes ("the evaluator noticed," "after reconsidering"), unresolved compound verdicts ("MET but barely," "close to threshold (unclear)"), and dash variants beyond single hyphen (per the project's response formatting standard). Always a FIX-tier verdict (not FAIL): the verifier rewrites the offending line as final-verdict prose preserving the numeric claim. Applies to BLUF, verdict lines, Structural Observations, and any main-context-assembled prose. Does NOT apply to subagent-produced What Happened/Beat Sheet or tokenizer metric tables. Rationale: reports are deliverables, not scratchpads. The article thesis is that opaque metrics corrode trust; prose that narrates the writer's in-progress reasoning corrodes trust the same way.
 
-- v1.17 - Added **Summary and Beat Sheet Pass** and **Report Verification Pass** as subagent-delegated Mode 1 routine steps. The v3 canary on Rocket Ch1.1 exposed a different failure mode from the Grammar/Spelling punt: the What Happened summary and Beat Sheet were produced inline from the main context and contained fabricated characters ("Santiago," "Javier," "rancher's wife"), invented plot events (kitchen scene, Spanish phone call, "coyotes sent to collect"), and a fundamental misread of genre (kidnap/rescue story instead of vampiric transformation and predatory hunt). The metrics were correct; the report's first two sections were fiction about fiction. Because those sections are the reader's first contact with the report, the fabrication corroded trust in the numbers that followed. The fix, mirroring the v1.16 Grammar/Spelling architecture, delegates the summary, beat sheet, and structural observations to a subagent reading the full chapter with fresh eyes and strict no-invention constraints. The subagent cannot be primed by accumulated genre assumptions because it has no accumulated context. Added **Report Verification Pass** as a separate subagent dispatched after assembly and before delivery: spot-checks narrative claims against the chapter, metric values against the tokenizer JSON, grammar/spelling claims against the subagent JSON, threshold-direction verdicts for correctness, Scope Note disclosure presence, and absence of placeholder text. Does NOT re-run the tokenizer or re-read the chapter for comprehension. Returns PASS/FIX/FAIL; FAIL hard-stops delivery. Mode 1 pipeline is now: strip, verify strip (subagent), tokenizer (bash), grammar/spelling (subagent), summary/beat-sheet (subagent), assemble, verify assembly (subagent), save. Added corresponding Scope Note disclosure lines. Rationale: assembly is where slippage happens; an audit against every source artifact closes the last gap. The article thesis is that opaque metrics corrode trust; reports that open with fabricated plot events corrode trust faster than any opaque number ever could.
+- v1.17 - Added **Summary and Beat Sheet Pass** and **Report Verification Pass** as subagent-delegated Mode 1 routine steps. An early canary run exposed a different failure mode from the Grammar/Spelling punt: the What Happened summary and Beat Sheet were produced inline from the main context and contained invented characters, fabricated plot events, and a fundamental misread of genre. The metrics were correct; the report's first two sections were fiction about the document. Because those sections are the reader's first contact with the report, the fabrication corroded trust in the numbers that followed. The fix, mirroring the v1.16 Grammar/Spelling architecture, delegates the summary, beat sheet, and structural observations to a subagent reading the full chapter with fresh eyes and strict no-invention constraints. The subagent cannot be primed by accumulated genre assumptions because it has no accumulated context. Added **Report Verification Pass** as a separate subagent dispatched after assembly and before delivery: spot-checks narrative claims against the chapter, metric values against the tokenizer JSON, grammar/spelling claims against the subagent JSON, threshold-direction verdicts for correctness, Scope Note disclosure presence, and absence of placeholder text. Does NOT re-run the tokenizer or re-read the chapter for comprehension. Returns PASS/FIX/FAIL; FAIL hard-stops delivery. Mode 1 pipeline is now: strip, verify strip (subagent), tokenizer (bash), grammar/spelling (subagent), summary/beat-sheet (subagent), assemble, verify assembly (subagent), save. Added corresponding Scope Note disclosure lines. Rationale: assembly is where slippage happens; an audit against every source artifact closes the last gap. The article thesis is that opaque metrics corrode trust; reports that open with fabricated plot events corrode trust faster than any opaque number ever could.
 
 - v1.16 - Formalized **Grammar and Spelling Pass** as a subagent-delegated Mode 1 routine step. The v3 canary exposed a hole: the tokenizer correctly refused to score Grammar and Spelling (regex cannot evaluate homophones, multilingual prose, context-dependent word choice), and the Mode 1 report inherited that punt with "deferred to LLM pass" placeholders. That produced reports where the first two sections said "we don't know." The premise of this routine is that every scored category has a defensible number or a documented reason it cannot be scored - "the tokenizer can't do it" is a technical note, not a reason. The fix mirrors Strip Verification's architecture: a subagent reads the stripped prose with fresh eyes, applies the Detection Heuristics Grammar and Spelling sections (including the six-step Recognition Order for Spelling and the full exclusion list), and returns a JSON blob with per-issue tier tags (safe/prompt). Mode 1 folds that JSON into the report's Grammar Check and Spelling Check sections as real percentages. Mode 3 and Mode 2 both consume the same JSON as their authoritative source rather than re-running detection. Added required disclosure in the Scope Note mirroring the Strip Verification disclosure line. Rationale: human copyeditors produce grammar/spelling counts by reading with judgment. An LLM subagent doing the same is not a compromise, it is the correct method. The tokenizer handles what regex can handle; the subagent handles what requires language understanding; both feed the same report.
 
@@ -1722,14 +1761,14 @@ v1.25 (2026-04-22). If thresholds, tiers, genre profiles, pre-processing rules, 
 
 - v1.14 - Eliminated judgment-call metrics wherever a mechanical definition was possible. Removed **Engagement Score** entirely: the v1.13 definition ("composite that rewards varied vocabulary, active verbs, and sensory grounding") was unmeasurable, and a standalone score for "engagement" that ignores the underlying metrics is the exact opacity this routine exists to correct. Rewrote **Emotion Tells** as filter-word constructions (subject + filter verb + emotion word) grounded in the publishing-industry filter-words literature (Allen, Hardy, Steinemann, Harnby); both lists are editable. Rewrote **Slow Pacing** as a three-condition paragraph rule: zero dialogue AND zero action-verb matches AND length > 50 words; action-verb list editable. Defined **Style Score** formula explicitly: one flagged sentence = one sentence containing any pattern match, not a per-match count. Defined **Sentence Variety** mapping explicitly: clamp(stddev / 2.0, 0, 10), which anchors the >= 5.0 threshold to a stddev of 10 words (empirical fiction baseline per Sichel 1974). Rewrote **Weak Adverbs** against an explicit weak-verb list, replacing the "substitutes for a stronger verb" judgment clause. Rewrote **Long Repeated Phrases** with two editable parameters (minimum phrase length 5, minimum occurrences 3) and tiered output (flagged phrases scored, diagnostic top-20 informational-only); defaults grounded in Biber/Conrad/Cortes lexical-bundle research. Updated tokenizer requirements, auto-fix tiers, genre sensitivity table, and genre threshold matrix to reflect all changes. Total goals count updated from 16 to 20-max (with dialogue and sample-size exemptions explicit). Rationale: if a metric is not mechanically defined, it is not a metric, it is a vibe. The article thesis requires that every number in a report trace back to a line in this document the author can read, argue with, and override.
 - v1.13 - Grounded Voice Consistency and Performance Tag Rate thresholds in Elliott Slaughter's 2020 empirical dialogue-tag study (hand-counted tag distributions across LOTR, Pride and Prejudice, Harry Potter 1, and The President Is Missing). Lowered Voice Consistency universal threshold from >= 60% to >= 50% (Austen floor at 50% and not considered drifting). Revised Performance Tag Rate genre matrix to align with measured values: Universal < 18%, F1 Literary < 18% (P&P anchor), F2 Thriller < 10% (President at 7%), F4 SFF < 22% (LOTR 15%, HP1 18%), F5 Horror < 25% (kept above F4 for genre convention), others tightened proportionally. Added "Empirical grounding" paragraph to the Dialogue Tags heuristic section crediting Slaughter and disclosing the n=4 sample-size caveat. Rationale: v1.12 thresholds were reasonable spitballs but had no stated source; Slaughter is the most directly applicable publicly available work (n=4 books, 3 genres, hand-counted) and gives the numbers a defensible floor. Thresholds remain editable per the standards-document philosophy; this establishes a grounded default rather than a corpus-validated norm.
-- v1.12 - Replaced the legacy "Unusual Dialogue Tags" metric (< N% of tags not "said" or "asked") with two separate metrics: Voice Consistency (dominant tag verb as % of all tags, universal threshold >= 60%) and Performance Tag Rate (% of tags drawn from an explicit performance-verb list, genre-sensitive threshold). Rationale: the legacy metric conflated two different failure modes — voice drift (author doesn't know what they sound like) and verb-crutch (tags doing emotion-work prose should do) — and scored both against a hard-coded word list that ignored genre. Surfaced by the Rocket Ch1.1 canary where "gasped," "hissed," and "breathed" are horror vernacular but the old metric flagged them as unusual and produced a 33% score on a 6-tag sample. Added a 15-tag sample-size floor below which both new metrics read N/A with the disclosure "You have fewer than 15 tags, this is not enough for evaluation." Added explicit editable Invisible and Performance tag-verb lists (Mode 3 persists to `user_config.json` under a `tag_verbs` field).
-- v1.11 - Collapsed Computation Method to Precise-only. Removed Ballpark eye-survey as a user-facing option after the Rocket Ch1.1 canary run showed eye-survey counts missing the tokenizer by 15+ percentage points on Glue Index (eye-survey ~40%, tokenizer 24.45%) and by roughly 12x on Long Repeated Phrases (eye-survey 11, tokenizer 139 extra occurrences). Error ranges at that scale are not "directional," they are wrong enough to misdirect revision. Removed the `computation` field from `user_config.json` since there is no longer a choice to persist. Added Strip Verification as a required routine step between pre-processing and tokenizer execution: an independent verification (ideally delegated to a subagent for fresh eyes) that confirms every declared strip category was removed, no narrative prose was over-stripped, and the word-count delta is plausible. Report's Scope Note now includes a Strip Verification disclosure line. Rationale: every downstream metric divides by the wrong denominator if the stripping pass has a bug, and the author has no way to know; an independent check catches both false-strip and missed-marker failure modes before the tokenizer pollutes the report.
+- v1.12 - Replaced the legacy "Unusual Dialogue Tags" metric (< N% of tags not "said" or "asked") with two separate metrics: Voice Consistency (dominant tag verb as % of all tags, universal threshold >= 60%) and Performance Tag Rate (% of tags drawn from an explicit performance-verb list, genre-sensitive threshold). Rationale: the legacy metric conflated two different failure modes — voice drift (author doesn't know what they sound like) and verb-crutch (tags doing emotion-work prose should do) — and scored both against a hard-coded word list that ignored genre. Surfaced by a horror-genre canary run where genre-native tag verbs were flagged as unusual and produced a 33% score on a 6-tag sample. Added a 15-tag sample-size floor below which both new metrics read N/A with the disclosure "You have fewer than 15 tags, this is not enough for evaluation." Added explicit editable Invisible and Performance tag-verb lists (Mode 3 persists to `user_config.json` under a `tag_verbs` field).
+- v1.11 - Collapsed Computation Method to Precise-only. Removed Ballpark eye-survey as a user-facing option after a canary run showed eye-survey counts missing the tokenizer by 15+ percentage points on Glue Index and by roughly 12x on Long Repeated Phrases. Error ranges at that scale are not "directional," they are wrong enough to misdirect revision. Removed the `computation` field from `user_config.json` since there is no longer a choice to persist. Added Strip Verification as a required routine step between pre-processing and tokenizer execution: an independent verification (ideally delegated to a subagent for fresh eyes) that confirms every declared strip category was removed, no narrative prose was over-stripped, and the word-count delta is plausible. Report's Scope Note now includes a Strip Verification disclosure line. Rationale: every downstream metric divides by the wrong denominator if the stripping pass has a bug, and the author has no way to know; an independent check catches both false-strip and missed-marker failure modes before the tokenizer pollutes the report.
 - v1.10 - Declared chapter-level scope as a first-class design principle. Added per-genre `max_chapter_words` values (F1-F5, N1-N5, U, C) anchored to genre convention rather than a universal number; over-scope documents run with a caveat and a beat-sheet-derived split suggestion rather than a hard block. Added per-genre `typical_beat_pattern` strings used as a reference lens. Added a required Beat Sheet section to the Report Format, positioned between What Happened and BLUF; beat sheet is diagnostic only (no score impact), produces structural observations where warranted, and composes with the over-scope split suggestion so structural advice is grounded in visible beats rather than vibes. Closing note on the Beat Sheet: "Claude can make mistakes; use your best judgment." These two features (Beat Sheet and Per-Character Dialogue, pending) are the ones that structurally cannot be done by pattern-matching software and are the primary case for why a language-model-based evaluator is a different tool than PWA.
 - v1.9 - Added BLUF (Bottom Line Up Front) as a required report section between "What Happened" and "Scope Note." Three to six bullets: verdict, strongest, weakest, judgment flags, and "if you do one thing." Flat professional tone required. Rewrote Formatting Rules to kill the inherited PWA cheerleading ("Nice work," "Wonderful," "Brilliant," "Fantastic"). Section verdict lines are now direct and numeric - "In range. 85% against a threshold of 80%" replaces "Nice work. Your style is looking good." Rationale: the report is information for the author to act on; a serious evaluator does not cheerlead.
-- v1.8 - Rewrote the Spelling heuristic. Old rule ("flag any token not in a standard English dictionary, including foreign words and proper nouns") reproduced exactly the dictionary-lookup stupidity the tool exists to replace. New rule defines a six-step recognition order: English dictionary -> multi-language recognition (the evaluator can read Spanish, French, German, Latin, etc.) -> proper noun recognition from context or canon MCP -> coined/jargon terms verified via web search -> genuine unknowns flagged for review but NOT counted against the score -> genuine misuses flagged and counted. Foreign words, recognized proper nouns, and verified coined terms no longer dock the Spelling Score. Surfaced by the canary run on Rocket Ch1.1, where Spanish and VoT character names were flagged as "unknown" and cost a percentage point of Spelling Score despite the evaluator being perfectly capable of recognizing them.
-- v1.7 - Added Computation Method section (Precise Python tokenizer vs Ballpark eye-survey) as the second router question, with mandatory report disclosure of which method produced the counts. Added a "What Happened" section at the top of the report format (two to three paragraphs summarizing document beats) and a dedicated Scope Note block so pre-processing, computation, and genre are all visible above the fold. Borrowed the "What Happened" convention from the author's own VoT chapter format. The summary serves two purposes: orientation (skim a folder of reports and identify each one at a glance) and comprehension check (if the evaluator cannot describe the piece accurately, the judgment-sensitive scores cannot be trusted). Surfaced by shakedown Finding 3 (scoring was eye-survey not mechanical) combined with the author's observation that a stranger skimming a folder of reports needs orientation faster than the summary section provides.
+- v1.8 - Rewrote the Spelling heuristic. Old rule ("flag any token not in a standard English dictionary, including foreign words and proper nouns") reproduced exactly the dictionary-lookup stupidity the tool exists to replace. New rule defines a six-step recognition order: English dictionary -> multi-language recognition (the evaluator can read Spanish, French, German, Latin, etc.) -> proper noun recognition from context -> coined/jargon terms verified via web search -> genuine unknowns flagged for review but NOT counted against the score -> genuine misuses flagged and counted. Foreign words, recognized proper nouns, and verified coined terms no longer dock the Spelling Score. Surfaced by a canary run where multilingual text and character names were flagged as "unknown" and cost a percentage point of Spelling Score despite the evaluator being perfectly capable of recognizing them.
+- v1.7 - Added Computation Method section (Precise Python tokenizer vs Ballpark eye-survey) as the second router question, with mandatory report disclosure of which method produced the counts. Added a "What Happened" section at the top of the report format (two to three paragraphs summarizing document beats) and a dedicated Scope Note block so pre-processing, computation, and genre are all visible above the fold. The summary serves two purposes: orientation (skim a folder of reports and identify each one at a glance) and comprehension check (if the evaluator cannot describe the piece accurately, the judgment-sensitive scores cannot be trusted). Surfaced by shakedown Finding 3 (scoring was eye-survey not mechanical) combined with the author's observation that a stranger skimming a folder of reports needs orientation faster than the summary section provides.
 - v1.6 - Reframed pre-processing from default-driven to author-driven. The router now asks the author what to strip before scoring, using format-specific suggested defaults only as a starting point. Different authors use different markup; forcing a default strips things the author wants scored or leaves things in that skew counts. Added `preprocessing` field to `user_config.json` schema so Mode 3 persists the author's choices.
-- v1.5 - Added Pre-processing section. Before any metric is computed, structural elements the narrative reader does not read as prose are stripped: markdown headings and front-matter, DOCX heading/title styles, plain-text chapter titles and bracketed production markers, HTML heading/nav tags. Report scope note must disclose what was stripped. Surfaced by shakedown canary run against Rocket Ch1.1, where VoT `[[INTERNAL DIALOGUE]]` markers and the "WHAT HAPPENED:" synopsis would have skewed every metric if counted as prose.
+- v1.5 - Added Pre-processing section. Before any metric is computed, structural elements the narrative reader does not read as prose are stripped: markdown headings and front-matter, DOCX heading/title styles, plain-text chapter titles and bracketed production markers, HTML heading/nav tags. Report scope note must disclose what was stripped. Surfaced by an early shakedown canary run where author-side structural markers would have skewed every metric if counted as prose.
 - v1.4 - Stranger-readability pass on the opening. New "What this document is," "Why a standards document exists at all," "If you are reading this because you want to fork it," and "Relationship to ProWritingAid" sections replace the old internal-spec preamble. No threshold, heuristic, or tier change.
 - v1.3 - Added File Safety Invariants as a first-class framework rule. Pre-flight path check, "copy" in every working filename, fix log leads with path disclosure, same-day collision rules, and defense-in-depth framing. These now inherit to every prompt in the routine.
 - v1.2 - Added Genre Profiles section with 11-genre threshold matrix (10 named profiles plus Universal) and Custom genre construction rules. Genre-sensitive categories now shift thresholds based on user selection; universal categories are unchanged.

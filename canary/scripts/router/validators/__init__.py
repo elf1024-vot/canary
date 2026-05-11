@@ -6,14 +6,11 @@ that returns a `ValidationResult` dataclass. The router consumes the
 result and either accepts the subagent's output or re-dispatches with the
 corrective instruction.
 
-Current modules:
+Modules:
 
-- `grammar_spelling` - Grammar and Spelling subagent validator
-
-Planned modules (blocked on subagent prompt hardening):
-
-- `strip_verify`
-- `summary_beat_sheet`
-- `character_dialogue`
-- `report_verify`
+- `grammar_spelling`  - Grammar and Spelling subagent validator
+- `strip_verify`      - Strip Verification subagent validator
+- `summary_beat_sheet`- Summary and Beat Sheet subagent validator
+- `character_dialogue`- Character Dialogue Consistency subagent validator
+- `report_verify`     - Report Verification subagent validator
 """

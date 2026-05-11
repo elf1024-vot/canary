@@ -12,7 +12,7 @@ The original document is never modified.
 
 ### Step 1: Load Standards
 
-Read `{SKILL_BASE}\references\_standards.md` in full. Every threshold, heuristic, auto-fix tier, and genre profile comes from there.
+Load using the same two-layer approach as Mode 1 Step 1: bundled `{SKILL_BASE}\references\_standards.md` always, then project `{{DOC_FOLDER}}\standards.md` (or `STANDARDS_PATH`) as an override layer if present. Read both in full. Every threshold, heuristic, auto-fix tier, and genre profile comes from those documents; the project file takes precedence where it defines a rule.
 
 ### Step 1a: Establish Genre
 
@@ -103,12 +103,10 @@ Write the resulting configuration to `{{DOC_FOLDER}}\user_config.json` with this
     "format": "txt",
     "strip": [
       "First line if it starts with 'Chapter'",
-      "Lines starting with 'Part ' or 'Cast:'",
-      "Lines starting with 'WHAT HAPPENED:'",
       "Lines containing [[...]] bracketed tags"
     ],
     "include_despite_defaults": [],
-    "notes": "VoT plain-text chapter format."
+    "notes": "Plain-text chapter format."
   },
   "thresholds": {
     "glue_index": 43,
@@ -153,7 +151,6 @@ For a Custom genre selection, set `genre.selected` to `"C"` and populate the `ge
       "sentence_length": "9.0 to 16.0",
       "sentence_variety": ">= 5.5",
       "passive_voice": "< 20.0",
-      "readability_grade": "<= 9",
       "complex_paragraphs": "< 16%",
       "glue_index": "< 40%",
       "weak_adverbs": "< 10.0",
@@ -317,6 +314,7 @@ Do not restate the report or change log in chat. The files are the deliverables.
 
 - Path to the document (required)
 - Genre selection (required; ask or inherit from router)
+- Standards document path (optional; if not supplied, Step 1 checks `{{DOC_FOLDER}}\standards.md` then asks the user)
 - Optional: title override
 - Optional: "reuse config" to skip the clarification step and apply the existing user_config.json as-is
 

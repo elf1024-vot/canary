@@ -111,6 +111,7 @@ def _score_matches(reported: Any, expected: float) -> bool:
 def validate(
     subagent_json: dict,
     stripped_file_path: str,
+    active_config: dict | None = None,
 ) -> ValidationResult:
     """
     Validate a Grammar and Spelling subagent JSON payload.
@@ -123,6 +124,11 @@ def validate(
     stripped_file_path
         The exact path the router dispatched the subagent with. The
         subagent's `stripped_file_read` must match this.
+    active_config
+        The parsed pwa_config.json for this run. Used to derive the
+        hallucination-marker set (paired_delimiters openers and
+        line_starts_with / exact_line header rule values). Pass None
+        to skip hallucination-marker checks.
 
     Returns
     -------
@@ -243,12 +249,23 @@ def validate(
     # 5. Substring checks against stripped file
     #
     # Every `excerpt`, `context`, and `word` must appear verbatim in the
-    # stripped file. Citations like `[[INTERNAL DIALOGUE:`, `WHAT HAPPENED:`,
-    # or `^Chapter` lines are guaranteed misses because the strip engine
-    # removed them - citing them means the subagent read the wrong file
-    # or hallucinated.
+    # stripped file. Build the hallucination marker set from the active
+    # config: paired_delimiters openers (all modes are stripped from the
+    # scored file) and line_starts_with / exact_line header rule values.
     # ------------------------------------------------------------------
-    hallucination_markers = ("[[INTERNAL DIALOGUE:", "[[THE BEAST:", "WHAT HAPPENED:")
+    _markers: list[str] = []
+    if active_config:
+        for pd in active_config.get("paired_delimiters", []):
+            opener = pd.get("opener")
+            if opener and isinstance(opener, str):
+                _markers.append(opener)
+        for rule in active_config.get("header_strip_patterns", []):
+            val = rule.get("value")
+            if val and isinstance(val, str) and rule.get("type") in (
+                "line_starts_with", "exact_line"
+            ):
+                _markers.append(val)
+    hallucination_markers: tuple[str, ...] = tuple(_markers)
 
     def _substring_check(label: str, item: dict, key: str) -> None:
         val = item.get(key)
@@ -359,12 +376,18 @@ def _cli() -> int:
     )
     parser.add_argument("--subagent-json", required=True)
     parser.add_argument("--stripped-file", required=True)
+    parser.add_argument("--config", default=None, help="Path to pwa_config.json (optional; enables hallucination-marker checks)")
     args = parser.parse_args()
 
     with open(args.subagent_json, "r", encoding="utf-8") as fh:
         payload = json.load(fh)
 
-    result = validate(payload, stripped_file_path=args.stripped_file)
+    active_config: dict | None = None
+    if args.config:
+        with open(args.config, "r", encoding="utf-8") as fh:
+            active_config = json.load(fh)
+
+    result = validate(payload, stripped_file_path=args.stripped_file, active_config=active_config)
 
     print(json.dumps(
         {

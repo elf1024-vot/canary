@@ -12,7 +12,14 @@ You are acting as a ProWritingAid-style evaluator.
 
 ### Step 1: Load Standards
 
-Read `{SKILL_BASE}\references\_standards.md` in full. That file defines every threshold, every heuristic, the Genre Profiles, and the exact report format. Do not proceed until it is loaded. Do not redefine any threshold inside this prompt.
+Load in two layers:
+
+1. **Bundled reference** — always load `{SKILL_BASE}\references\_standards.md`. This provides all detection heuristics, report format, subagent contracts, and genre profiles.
+2. **Project overrides** — if `STANDARDS_PATH` was explicitly passed, load that. Else if `{{DOC_FOLDER}}\standards.md` exists, load that. If neither exists, skip this layer silently.
+
+When both layers are loaded, the project file takes precedence on any rule it defines (thresholds, banned patterns, required elements, hard gates, skipped categories). Everything not mentioned in the project file inherits from the bundled reference.
+
+Do not proceed until the bundled reference is loaded in full.
 
 ### Step 1a: Establish Genre
 
@@ -20,14 +27,13 @@ If this prompt was invoked directly (not via Canary), ask the user which genre p
 
 Universal-category thresholds are never changed by genre selection.
 
-### Step 1b: Load `pwa_config.json` (v1.22)
+### Step 1b: Load `pwa_config.json`
 
-Per `_standards.md` "Config-driven preprocessing," the routine reads its preprocessing rules from a single JSON config file. Look up the config in this order:
+Per the active standards document "Config-driven preprocessing," the routine reads its preprocessing rules from a single JSON config file. Look for the config at:
 
-1. `<manuscript-folder>/pwa_config.json` - per-manuscript override.
-2. `{SKILL_BASE}\references\pwa_config.json` - skill-bundled default.
+`{{DOC_FOLDER}}\pwa_config.json`
 
-If neither exists, dispatch the first-run setup interview defined in `_standards.md` "First-run setup interview." Walk the author through manuscript format, header strip rules, paired delimiters (with the A/B/C taxonomy), and exclusion lists. Write the result to the manuscript folder and proceed.
+If none exists, run the first-run setup interview defined in the active standards document "First-run setup interview." Show the author the top of their document and ask three conversational questions: what to ignore, whether they use special markers, and any words to exclude from specific checks. Translate their plain-English answers into config entries, confirm the summary with the author, then write the result to `{{DOC_FOLDER}}\pwa_config.json` and proceed.
 
 If the config exists, load it and emit a one-line summary:
 
@@ -39,11 +45,12 @@ Default `N` proceeds with the loaded config. If the author answers `y`, drop int
 1. View current config
 2. Add/edit/remove header strip rule
 3. Add/edit/remove paired delimiter
-4. Add/edit/remove acronym emphasis exclusion
-5. Add/edit/remove weak adverb noun exclusion
-6. Add/edit/remove -ing starts proper noun exclusion
-7. Done (save and continue)
-8. Cancel (discard changes, continue with loaded config)
+4. Add/edit/remove character name
+5. Add/edit/remove acronym emphasis exclusion
+6. Add/edit/remove weak adverb noun exclusion
+7. Add/edit/remove -ing starts proper noun exclusion
+8. Done (save and continue)
+9. Cancel (discard changes, continue with loaded config)
 ```
 
 On save, write the new config to the same path it was loaded from, after first copying the prior config to a sibling `pwa_config.json.bak` (single rolling backup, overwritten each save).
@@ -100,7 +107,7 @@ If invoked standalone without a router, perform the strip now using the active c
 
 If the second-attempt failure involves content defects (missing paragraphs, hallucinated citations, invented characters, off-by-large-margin numeric values that would change scoring), the mechanical-normalization path is not available and the router hard-stops as specified above.
 
-This escape hatch was added after the first live run of the `canary` skill on Blondie Book 3 Ch13.1 (2026-04-23), where three subagent passes failed first attempt, improved content on re-dispatch, but introduced new schema-shape drift that would have forced a hard-stop with otherwise-valid analytic content. The router applied normalizations to `modes` (array to object), `structural_observations` (string to array), and `tier` (HIGH/MED to prompt/safe) and documented each in the Scope Note.
+This escape hatch was added after the first live run of the `canary` skill (2026-04-23), where three subagent passes failed first attempt, improved content on re-dispatch, but introduced new schema-shape drift that would have forced a hard-stop with otherwise-valid analytic content. The router applied normalizations to `modes` (array to object), `structural_observations` (string to array), and `tier` (HIGH/MED to prompt/safe) and documented each in the Scope Note.
 
 If the subagent's verdict is FAIL but the validator still PASSes (the subagent correctly identified strip failures and reported them in `failures[]` against real categories), this means the strip itself failed - not the verification. Hard-stop Mode 1 with the strip-failure report; do not re-run the subagent. The subagent did its job correctly; the underlying strip pipeline is broken and the author needs to fix the config or the source file.
 
@@ -169,7 +176,32 @@ Close the section with the "Claude can make mistakes; use your best judgment" no
 
 For each category in the Standards Reference table, run the detection heuristic on the stripped prose and compute the metric.
 
-**Step 3a: Tokenizer pass.** Write a Python tokenizer script per the Tokenizer requirements in `_standards.md` Computation Method section. Run it via the bash tool against the verified stripped prose. Save the script to `{{DOC_FOLDER}}\[Title] - tokenizer [YYYY-MM-DD].py`. Fold the JSON output into the report. The tokenizer handles every mechanical metric.
+**Step 3a: Tokenizer pass.** Run the canonical tokenizer via bash from `{SKILL_BASE}\scripts\` (the package root):
+
+```
+python3 -B "{SKILL_BASE}\scripts\tokenizer.py" \
+    --stripped "<stripped file path>" \
+    --title "<document title>" \
+    --config "{{DOC_FOLDER}}\pwa_config.json" \
+    --out-dir "{{DOC_FOLDER}}"
+```
+
+If a per-manuscript `pwa_config.json` exists, also pass `--config "<per-manuscript pwa_config.json path>"`. The script writes `{{DOC_FOLDER}}\[Title] - tokenizer [YYYY-MM-DD].json`. Fold the JSON output into the report. The tokenizer handles every mechanical metric and emits a `genre_hint` block consumed by Step 3a.1.
+
+**Step 3a.1: Genre sanity check.** Read `genre_hint` from the tokenizer JSON output. Bucket membership: Fiction = [F1, F2, F3, F4, F5]; NonFiction = [NF1]; Academic = [NF2]. If the selected genre code (from Step 1a) is NOT in the bucket named by `genre_hint.detected_bucket`, a bucket mismatch exists.
+
+Branch on `genre_hint.confidence`:
+
+- **`high` + mismatch**: Ask the user before continuing:
+
+  > "You selected [genre name] ([profile code]), which is a [detected_bucket opposite] profile. This document's signal profile suggests [detected_bucket] ([rationale]). Are you sure about the genre selection?"
+
+  - User confirms: proceed with the original selection.
+  - User redirects: return to Step 1a and re-establish genre.
+
+- **`medium` + mismatch**: Proceed with the original selection. Add a one-line note to the Scope Note: "Genre hint: document signals suggest [detected_bucket] (medium confidence); author confirmed [selected genre] selection."
+
+- **`low` confidence** or **no mismatch**: proceed silently. Do not mention the genre hint.
 
 **Step 3b: Grammar and Spelling subagent pass (validator-gated).** Per `_standards.md` "Grammar and Spelling Pass: Subagent-Delegated Evaluation" and the "Subagent Architectural Rule" in v1.25, the assistant context IS the router. Dispatch happens here; validation happens here. Procedure:
 
@@ -179,7 +211,7 @@ For each category in the Standards Reference table, run the detection heuristic 
    - `{{STRIPPED_FILE_PATH}}` - the stripped-prose path written in Step 2.
    - `{{GENRE}}` - the genre selected in Step 1a.
    - `{{SERIES_CONTEXT}}` - active `pwa_config.json` `series_context` field if present, else `(none specified)`.
-   - `{{CHARACTER_NAMES}}` - the per-chapter cast list parsed from the `Part / Cast:` line in the chapter header if present, else `(none specified)`.
+   - `{{CHARACTER_NAMES}}` - the `character_names` field from the active `pwa_config.json` if present, else `(none specified)`.
    - `{{PLACE_NAMES}}` - active `pwa_config.json` `place_names` field if present, else `(none specified)`.
    - `{{COINED_TERMS}}` - active `pwa_config.json` `coined_terms` field if present, else `(none specified)`.
 
@@ -288,16 +320,15 @@ Section order after the Summary Report:
 7. Sentence Length Check
 8. Sentence Variety
 9. Very Long Sentences
-10. Readability Check
-11. Complex Paragraphs
-12. Sticky Sentences Check (Glue Index)
-13. Sentence Structure Check
-14. Pacing Check
-15. Consistency Check
-16. Repeats Check
-17. Dialogue Tags Check
-18. Character Dialogue Check
-19. **Non-Character Voice Registers** (v1.22 - included only when the marker map's `non_character_voice_spans` array is non-empty; rendered per the format in `_standards.md` Report Format with diagnostic-only disclosure header and per-register subsection format)
+10. Complex Paragraphs
+11. Sticky Sentences Check (Glue Index)
+12. Sentence Structure Check
+13. Pacing Check
+14. Consistency Check
+15. Repeats Check
+16. Dialogue Tags Check
+17. Character Dialogue Check
+18. **Non-Character Voice Registers** (v1.22 - included only when the marker map's `non_character_voice_spans` array is non-empty; rendered per the format in `_standards.md` Report Format with diagnostic-only disclosure header and per-register subsection format)
 
 ### Step 5a: Report Verification Pass (validator-gated)
 
@@ -371,9 +402,10 @@ This mode never modifies the input document. If a write path is not clearly a ne
 ## Inputs Expected
 
 - Path to the document to review (required)
+- Standards document path (optional; if not supplied, Step 1 checks `{{DOC_FOLDER}}\standards.md` then asks the user)
 - Genre selection (required; if not supplied, ask before starting)
-- POV character name (required for v1.22 Mode A paired-delimiter handling when any Mode A entry exists in the active config; if not supplied, ask before starting; the routine never hardcodes POV character names)
-- Active `pwa_config.json` (v1.22; resolved per Step 1b - per-manuscript override first, skill-bundled default second; first-run interview if neither exists)
-- Strip verification result (required; if not supplied by router, perform the strip and verify via subagent before starting per `_standards.md`)
+- POV character name (required when any Mode A paired-delimiter entry exists in the active config; if not supplied, ask before starting)
+- `{{DOC_FOLDER}}\pwa_config.json` (resolved per Step 1b; first-run interview if absent)
+- Strip verification result (required; if not supplied by router, perform the strip and verify via subagent per the active standards document)
 - Optional: title override (defaults to the filename without extension)
 - Optional: "as PDF" to also produce a PDF render

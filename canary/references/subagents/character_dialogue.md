@@ -38,7 +38,7 @@ Per character, per mode: **6 lines minimum**. Below the floor, the character-mod
 
 ### Speech modes
 
-- **Spoken mode**: quoted dialogue lines attributed to the character via tags ("Naida said"), context, or paragraph structure.
+- **Spoken mode**: quoted dialogue lines attributed to the character via tags ("Alex said"), context, or paragraph structure.
 - **Internal mode** (POV characters only, only when marker map present): the marker-map-identified internal-mode spans (the `internal_mode_spans` array in the marker map). Attribute these to the POV character named in the marker map's `pov_character` field (or the `{{POV_CHARACTER}}` placeholder if marker map omits it).
 
 For POV characters whose marker map shows internal-mode spans clearing the per-mode 6-line floor, build TWO fingerprints (spoken + internal) and return them under `modes.spoken` and `modes.internal`. For non-POV characters and POV characters without enough internal-mode lines, only the spoken mode is returned. Drift WITHIN each mode is flagged. **Drift BETWEEN the two modes (spoken-to-internal, same POV character) is NEVER flagged**: the natural gap between speech and thought is expected, and flagging it would produce false positives on every POV chapter.
@@ -141,18 +141,18 @@ Return STRICT JSON only. No prose before, no prose after, no markdown code fence
     "unattributed_lines": 2,
     "characters": [
       {
-        "name": "Naida",
+        "name": "Alex",
         "is_pov": true,
         "modes": {
           "spoken": {
             "line_count": 24,
             "sample_status": "cleared",
             "fingerprint": {
-              "identity_label": "Gen Z, Latina, sardonic, code-switches Spanish",
+              "identity_label": "terse, sardonic, clipped sentences",
               "sentence_length": "short-clipped (avg 6 words)",
-              "diction_register": "informal, occasional profanity, Spanish code-switch when angry",
+              "diction_register": "informal, occasional profanity",
               "sentence_structure": "declaratives and fragments dominant; questions rare",
-              "signature_markers": "trailing ellipsis, 'chinga' as exclamation",
+              "signature_markers": "trailing ellipsis, rhetorical dismissals",
               "contractions": "always contracts"
             },
             "drift_flags": [
@@ -171,11 +171,11 @@ Return STRICT JSON only. No prose before, no prose after, no markdown code fence
             "line_count": 11,
             "sample_status": "cleared",
             "fingerprint": {
-              "identity_label": "Gen Z, Latina, sardonic, analytical, second-person self-address",
+              "identity_label": "sardonic, analytical, second-person self-address",
               "sentence_length": "medium (avg 13 words)",
-              "diction_register": "informal to dryly observational, occasional profanity, English-dominant with Spanish tags",
+              "diction_register": "informal to dryly observational",
               "sentence_structure": "declaratives and sentence fragments; rhetorical questions common",
-              "signature_markers": "self-directed 'you,' catalog metaphors, naming the register",
+              "signature_markers": "self-directed 'you,' catalog metaphors",
               "contractions": "always contracts"
             },
             "drift_flags": [],
@@ -184,7 +184,7 @@ Return STRICT JSON only. No prose before, no prose after, no markdown code fence
         }
       },
       {
-        "name": "Doorman",
+        "name": "Stranger",
         "is_pov": false,
         "modes": {
           "spoken": {
@@ -238,10 +238,10 @@ After receiving the JSON output, the router validates (per the Subagent Architec
 12. `flag_count_total` matches the actual count of `drift_flags[]` plus `attribution_flags[]` across every character-mode pair.
 13. `goal_verdict` matches the flag count: zero flags = `"ACHIEVED"`-style verdict; nonzero flags = `"MISSED"`-style verdict; insufficient samples = `"N/A"`-style verdict.
 
-If any validation fails, the router re-dispatches once with the specific failure cited in a corrective instruction (e.g., "you reported `line_count: 4` with `sample_status: "cleared"` for character `Doorman` mode `spoken`; the per-mode floor is 6 lines, so this pair must use `sample_status: "insufficient sample"` with `fingerprint: null`"). If the second dispatch also fails, the router hard-stops the Mode 1 run and reports the failure to the author.
+If any validation fails, the router re-dispatches once with the specific failure cited in a corrective instruction (e.g., "you reported `line_count: 4` with `sample_status: "cleared"` for character `Stranger` mode `spoken`; the per-mode floor is 6 lines, so this pair must use `sample_status: "insufficient sample"` with `fingerprint: null`"). If the second dispatch also fails, the router hard-stops the Mode 1 run and reports the failure to the author.
 
 ## Version history
 
-- **v1.2 (2026-04-23)** - Modes-shape hardening after first live run of the `canary` skill on Blondie Book 3 Ch13.1 produced a `modes: [{"mode_type": "spoken", ...}]` array shape on first attempt; re-dispatch corrected to the object shape only after an explicit WRONG/RIGHT callout. Added a "Modes shape" section before the output format with explicit WRONG/RIGHT JSON examples enumerating the array-wrap failure mode and the `mode_type` key invention. Bumped schema example's `subagent_version` from `v1.1` to `v1.2`. No schema fields changed; this is a prompt-only hardening. Validator `router/validators/character_dialogue.py` unchanged.
-- **v1.1 (2026-04-23)** - Schema-literalness hardening, parallel to strip_verify v1.1, summary_beat_sheet v1.1, and grammar_spelling v1.3. Applied preemptively before the first Character Dialogue dispatch in the Babydoll Ch19.1 canary dry run. Added a "Schema literalness" section enumerating the exact top-level keys, the exact keys inside `character_dialogue_consistency`, the per-character keys (`name`, `is_pov`, `modes`), the per-mode keys (`line_count`, `sample_status`, `fingerprint`, `drift_flags`, `attribution_flags`), the six fingerprint keys (`identity_label`, `sentence_length`, `diction_register`, `sentence_structure`, `signature_markers`, `contractions`), and the per-flag keys (drift: `paragraph`, `text`, `shifted_from`, `shifted_to`, `suspected_cause`, `tier`; attribution: `paragraph`, `text`, `matches_character_better`, `dimensions_matched`, `tier`). Explicitly forbade both renaming and adding fields, and enumerated the two valid `sample_status` values. Added Hard constraint making field-name literalness a gate. Bumped schema example's `subagent_version` from `v1.0` to `v1.1`. No schema fields changed; this is a prompt-only hardening. Validator `router/validators/character_dialogue.py` unchanged.
-- **v1.0 (2026-04-22)** - Initial hardened release per `_standards.md` v1.25 Subagent Architectural Rule. Four placeholders, JSON-only output, no self-evaluation. Validator gate lives in `router/validators/character_dialogue.py`. The Character Dialogue Consistency pass was previously a freeform subagent task described only in `_standards.md` Step 3c language; this template makes the dispatch deterministic and the per-mode 6-line floor, drift/attribution citations, and cross-mode prohibition router-validatable.
+- **v1.2 (2026-04-23)** - Modes-shape hardening after the first live run produced a `modes: [{"mode_type": "spoken", ...}]` array shape on first attempt; re-dispatch corrected to the object shape only after an explicit WRONG/RIGHT callout. Added a "Modes shape" section before the output format with explicit WRONG/RIGHT JSON examples enumerating the array-wrap failure mode and the `mode_type` key invention. Bumped schema example's `subagent_version` from `v1.1` to `v1.2`. No schema fields changed; this is a prompt-only hardening. Validator `router/validators/character_dialogue.py` unchanged.
+- **v1.1 (2026-04-23)** - Schema-literalness hardening, parallel to strip_verify v1.1, summary_beat_sheet v1.1, and grammar_spelling v1.3. Applied preemptively before the first Character Dialogue dispatch in an end-to-end canary dry run. Added a "Schema literalness" section enumerating the exact top-level keys, the exact keys inside `character_dialogue_consistency`, the per-character keys (`name`, `is_pov`, `modes`), the per-mode keys (`line_count`, `sample_status`, `fingerprint`, `drift_flags`, `attribution_flags`), the six fingerprint keys (`identity_label`, `sentence_length`, `diction_register`, `sentence_structure`, `signature_markers`, `contractions`), and the per-flag keys (drift: `paragraph`, `text`, `shifted_from`, `shifted_to`, `suspected_cause`, `tier`; attribution: `paragraph`, `text`, `matches_character_better`, `dimensions_matched`, `tier`). Explicitly forbade both renaming and adding fields, and enumerated the two valid `sample_status` values. Added Hard constraint making field-name literalness a gate. Bumped schema example's `subagent_version` from `v1.0` to `v1.1`. No schema fields changed; this is a prompt-only hardening. Validator `router/validators/character_dialogue.py` unchanged.
+- **v1.0 (2026-04-22)** - Initial hardened release per `_standards.md` v1.25 Subagent Architectural Rule. Four placeholders, JSON-only output, no self-evaluation. Validator gate lives in `router/validators/character_dialogue.py`. The Character Dialogue Consistency pass was previously a freeform subagent task described only in `_standards.md` Step 3c language; this template makes the dispatch deterministic and the per-mode 6-line floor, drift/attribution citations, and cross-mode prohibition router-validatable. Schema example uses generic character names (Alex, Stranger) — substitute the actual chapter's character names at runtime.

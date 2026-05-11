@@ -1,39 +1,9 @@
 {
   "schema_version": "1.0",
-  "_comment": "Routine-level default PWA config (v1.22). Per-manuscript overrides at <manuscript-folder>/pwa_config.json shallow-merge over this file. Header strip rules and paired-delimiter declarations are arrays; manuscript entries concatenate AFTER routine entries (manuscript entries take lower priority under first-match-wins; authors who want manuscript rules to win must either reorder by editing the manuscript config or remove the routine-level entry first). See _standards.md 'Config-driven preprocessing' for full schema documentation.",
-  "header_strip_patterns": [
-    {
-      "label": "chapter title",
-      "type": "line_starts_with",
-      "value": "Chapter ",
-      "scope": "first_line_only",
-      "consume": "single_line"
-    },
-    {
-      "label": "Part/Cast block",
-      "type": "line_starts_with",
-      "value": "Part ",
-      "and_contains": "Cast:",
-      "scope": "all",
-      "consume": "single_line"
-    },
-    {
-      "label": "WHAT HAPPENED block",
-      "type": "line_starts_with",
-      "value": "WHAT HAPPENED:",
-      "scope": "all",
-      "consume": "until_blank_line"
-    }
-  ],
-  "paired_delimiters": [
-    {
-      "opener": "[[INTERNAL DIALOGUE:",
-      "closer": "]]",
-      "mode": "A",
-      "label": "internal dialogue",
-      "attributed_to_pov": true
-    }
-  ],
+  "_comment": "TEMPLATE — copy this file to your document folder as pwa_config.json and fill in your strip rules. This file ships with the skill as a starting point and is not loaded automatically. See the active standards document 'Config-driven preprocessing' for full schema documentation.",
+  "header_strip_patterns": [],
+  "paired_delimiters": [],
+  "character_names": [],
   "acronym_emphasis_exclusions": [],
   "weak_adverb_noun_exclusions": [
     "assembly", "family", "supply", "reply", "rally", "ally", "anomaly",

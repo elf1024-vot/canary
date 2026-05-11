@@ -144,8 +144,8 @@ Return STRICT JSON only. No prose before, no prose after, no markdown code fence
   "verdict": "PASS",
   "narrative_checks": [
     {
-      "claim": "POV: Naida",
-      "source_excerpt_from_chapter": "Naida watched the door.",
+      "claim": "POV: Alex",
+      "source_excerpt_from_chapter": "Alex watched the door.",
       "found_in_chapter": true
     }
   ],
@@ -190,10 +190,10 @@ Return STRICT JSON only. No prose before, no prose after, no markdown code fence
   "character_dialogue_checks": {
     "pass_ran": true,
     "marker_map_present": true,
-    "characters_in_json": ["Naida", "Ana", "Doorman"],
-    "characters_in_report": ["Naida", "Ana", "Doorman"],
-    "pov_characters_with_two_modes": ["Naida"],
-    "modes_rendered_per_pov": {"Naida": ["spoken", "internal"]},
+    "characters_in_json": ["Alex", "Jordan", "Stranger"],
+    "characters_in_report": ["Alex", "Jordan", "Stranger"],
+    "pov_characters_with_two_modes": ["Alex"],
+    "modes_rendered_per_pov": {"Alex": ["spoken", "internal"]},
     "missing_headline_labels": [],
     "drift_flag_count_in_json": 1,
     "drift_flag_rows_in_report": 1,
@@ -209,7 +209,7 @@ Return STRICT JSON only. No prose before, no prose after, no markdown code fence
   },
   "config_and_strip_log_checks": {
     "config_path_in_scope_note": true,
-    "active_config_path": "C:\\Users\\elf10\\ClaudeCoWork\\PWA\\routine\\pwa_config.json",
+    "active_config_path": "{{DOC_FOLDER}}\\pwa_config.json",
     "strip_log_present": true,
     "strip_log_labels_match_config_labels": true,
     "strip_log_summary_present": true
@@ -233,7 +233,7 @@ If `verdict` is `FIX` or `FAIL`, populate `discrepancies` with one entry per fin
     "tier": "FAIL",
     "category": "narrative_check",
     "location": "What Happened paragraph 2",
-    "evidence": "report cites 'Santiago' but no occurrence of 'Santiago' in original chapter file"
+    "evidence": "report cites 'Phantom' but no occurrence of 'Phantom' in original chapter file"
   }
 ]
 ```
@@ -274,7 +274,7 @@ After receiving the JSON output, the router validates (per the Subagent Architec
 10. `character_dialogue_checks` and `non_character_voice_checks` and `config_and_strip_log_checks` are objects (not nulls) with the expected shape; if a check is non-applicable (e.g., no marker map), the `applicable: false` form is used.
 11. Validation is recursive only one level deep per `_standards.md`: the router does not dispatch yet another verifier to validate this verifier's output. The router itself is the trusted root.
 
-If any validation fails, the router re-dispatches once with the specific failure cited in a corrective instruction (e.g., "you reported `narrative_checks[2].claim` as `'Santiago entered the room'` with `found_in_chapter: true`, but the string `'Santiago'` does not appear in the original chapter file; re-read the chapter and correct the entry"). If the second dispatch also fails, the router hard-stops the Mode 1 run and reports the failure to the author.
+If any validation fails, the router re-dispatches once with the specific failure cited in a corrective instruction (e.g., "you reported `narrative_checks[2].claim` as `'Phantom entered the room'` with `found_in_chapter: true`, but the string `'Phantom'` does not appear in the original chapter file; re-read the chapter and correct the entry"). If the second dispatch also fails, the router hard-stops the Mode 1 run and reports the failure to the author.
 
 ## Version history
 

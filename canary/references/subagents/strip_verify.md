@@ -29,11 +29,11 @@ If any required file (the first three) is unreadable, return `{"error": "file no
 Per `_standards.md` "Strip Verification" section, you confirm three things:
 
 1. **Strip categories were honored.** For every entry in the strip log's `rules_applied` array (and every `paired_delimiters` declaration in the active config), check that representative tokens of that category appear ZERO times in the stripped file. Examples:
-   - If a header rule labeled "WHAT HAPPENED block" fired with `matches: 1`, the literal string `WHAT HAPPENED:` must NOT appear in the stripped file.
-   - If a paired delimiter `[[INTERNAL DIALOGUE:` (Mode A) fired with `matches: 11`, the literal `[[INTERNAL DIALOGUE:` must NOT appear in the stripped file (Mode A keeps interior content but strips markers).
-   - If a paired delimiter `[[THE BEAST:` (Mode B) fired with `matches: 1`, neither the `[[THE BEAST:` opener nor the interior text recorded in the marker map's `non_character_voice_spans` must appear in the stripped file (Mode B strips both markers AND content).
+   - If a header rule labeled "YAML front matter" fired with `matches: 1`, the opener token (`---`) must NOT appear at the top of the stripped file.
+   - If a paired delimiter `[[THOUGHT:` (Mode A) fired with `matches: 11`, the literal `[[THOUGHT:` must NOT appear in the stripped file (Mode A keeps interior content but strips markers).
+   - If a paired delimiter `[[NARRATOR:` (Mode B) fired with `matches: 1`, neither the `[[NARRATOR:` opener nor the interior text recorded in the marker map's `non_character_voice_spans` must appear in the stripped file (Mode B strips both markers AND content).
 
-2. **No narrative prose was over-stripped.** Spot-check three narrative paragraphs from the original at varied positions (opening third, middle third, closing third). Pick paragraphs that are clearly narrative prose (not headers, not paired-delimiter blocks, not Part/Cast lines). For each, confirm the paragraph appears verbatim in the stripped file. If any spot-checked paragraph is missing, the strip over-reached.
+2. **No narrative prose was over-stripped.** Spot-check three narrative paragraphs from the original at varied positions (opening third, middle third, closing third). Pick paragraphs that are clearly narrative prose (not headers, not paired-delimiter blocks, not strip-declared patterns). For each, confirm the paragraph appears verbatim in the stripped file. If any spot-checked paragraph is missing, the strip over-reached.
 
 3. **Word-count delta is plausible given the strip log.** The strip log records `word_counts.source`, `word_counts.stripped`, and `word_counts.delta`. Compute the expected delta as the rough sum of `lines_consumed` (in words, estimate ~6 words/line if exact word counts are not in the log) plus `interior_words_excluded` for each Mode B rule. The reported delta should be within plus or minus 10% of the expected delta, or within plus or minus 50 words on small chapters where the percentage is noisy.
 
@@ -75,8 +75,8 @@ Return STRICT JSON only. No prose before, no prose after, no markdown code fence
       "found_in_stripped": false
     },
     {
-      "label": "internal dialogue (Mode A)",
-      "expected_absent_token": "[[INTERNAL DIALOGUE:",
+      "label": "internal thought (Mode A)",
+      "expected_absent_token": "[[THOUGHT:",
       "found_in_stripped": false
     }
   ],
@@ -113,8 +113,8 @@ Return STRICT JSON only. No prose before, no prose after, no markdown code fence
 ```json
 "failures": [
   {
-    "category": "internal dialogue (Mode A)",
-    "evidence": "literal token `[[INTERNAL DIALOGUE:` found at position N in stripped file"
+    "category": "internal thought (Mode A)",
+    "evidence": "literal token `[[THOUGHT:` found at position N in stripped file"
   }
 ]
 ```
@@ -156,7 +156,7 @@ After receiving the JSON output, the router validates (per the Subagent Architec
 7. `word_count_delta_check.reported_delta` matches the strip log's `word_counts.delta` exactly.
 8. Every `failures[]` entry references a category that appears in the strip log or the active config (the v1.25 spec is explicit: "every `failures` entry references a real category from the strip log").
 
-If any validation fails, the router re-dispatches once with the specific failure cited in a corrective instruction (e.g., "you reported `found_in_stripped: false` for the token `[[INTERNAL DIALOGUE:` but the router found that literal string at position 1247 in the stripped file; re-read the file and correct your report"). If the second dispatch also fails, the router hard-stops the Mode 1 run and reports the failure to the author.
+If any validation fails, the router re-dispatches once with the specific failure cited in a corrective instruction (e.g., "you reported `found_in_stripped: false` for the token `[[THOUGHT:` but the router found that literal string at position 1247 in the stripped file; re-read the file and correct your report"). If the second dispatch also fails, the router hard-stops the Mode 1 run and reports the failure to the author.
 
 ## Version history
 

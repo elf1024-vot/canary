@@ -1,4 +1,4 @@
-"""PWA / Canary v1.23 config-aware tokenizer.
+"""PWA / Canary v1.24 config-aware tokenizer.
 
 Reads stripped prose (output of strip_engine.py) and a merged pwa_config.json,
 emits one JSON blob with per-metric counts and flagged_items arrays. Honors the
@@ -14,7 +14,7 @@ per-detector 'Flagged items' subsections.
 Usage:
     python tokenizer.py \\
         --stripped "C:\\path\\to\\stripped.txt" \\
-        --title "Ulysses Ch11.1" \\
+        --title "Chapter 1" \\
         [--config "C:\\path\\to\\manuscript\\pwa_config.json"] \\
         [--routine-config "C:\\path\\to\\routine\\pwa_config.json"] \\
         [--out-dir "C:\\path\\to\\temp"] \\
@@ -229,7 +229,6 @@ def detect_basics(paragraphs: list[str]) -> dict[str, Any]:
     sentences_by_para: list[list[str]] = []
     sent_lengths: list[int] = []
     total_words = 0
-    syllable_total = 0  # rough Flesch-Kincaid input
 
     for p in paragraphs:
         sents = split_sentences(p)
@@ -238,8 +237,6 @@ def detect_basics(paragraphs: list[str]) -> dict[str, Any]:
             ws = words_in(s)
             sent_lengths.append(len(ws))
             total_words += len(ws)
-            for w in ws:
-                syllable_total += _count_syllables(w)
 
     sent_count = len(sent_lengths)
     avg_sent_len = (sum(sent_lengths) / sent_count) if sent_count else 0
@@ -251,12 +248,6 @@ def detect_basics(paragraphs: list[str]) -> dict[str, Any]:
         stddev = 0.0
     variety_score = max(0.0, min(10.0, stddev / 2.0))
 
-    # Flesch-Kincaid grade level: 0.39*(words/sentences) + 11.8*(syllables/words) - 15.59
-    fk_grade = (
-        0.39 * (total_words / sent_count) + 11.8 * (syllable_total / total_words) - 15.59
-        if sent_count and total_words else 0.0
-    )
-
     return {
         "paragraph_count": len(paragraphs),
         "sentence_count": sent_count,
@@ -264,27 +255,9 @@ def detect_basics(paragraphs: list[str]) -> dict[str, Any]:
         "average_sentence_length": round(avg_sent_len, 2),
         "sentence_length_stddev": round(stddev, 2),
         "sentence_variety_score": round(variety_score, 2),
-        "flesch_kincaid_grade": round(fk_grade, 2),
         "_sentences_by_para": sentences_by_para,
         "_sent_lengths": sent_lengths,
     }
-
-
-def _count_syllables(word: str) -> int:
-    word = word.lower().strip(".,;:!?\"'\u201c\u201d-")
-    if not word:
-        return 0
-    vowels = "aeiouy"
-    count = 0
-    prev_was_vowel = False
-    for ch in word:
-        is_vowel = ch in vowels
-        if is_vowel and not prev_was_vowel:
-            count += 1
-        prev_was_vowel = is_vowel
-    if word.endswith("e") and count > 1:
-        count -= 1
-    return max(1, count)
 
 
 def detect_very_long_sentences(sentences_by_para: list[list[str]]) -> dict[str, Any]:
@@ -411,8 +384,8 @@ def detect_ing_starts(
                 # 'ing' and not in proper-noun exclusion list).
                 # The safest move per _standards.md is to be conservative when
                 # uncertain. We'll skip rather than flag when no lowercase
-                # evidence exists, since the Ulysses canary specifically
-                # surfaced 'Crimson', 'Inferior', 'Practitioner' false positives.
+                # evidence exists; an early canary run surfaced false positives
+                # on capitalized proper nouns and multi-syllable -ing words.
                 continue
             count += 1
             flagged.append({
@@ -805,6 +778,96 @@ def detect_acronym_consistency(text: str, exclusion_list: list[str]) -> dict[str
 
 
 # ---------------------------------------------------------------------------
+# Genre sanity hint (bucket-level only: Fiction / NonFiction / Academic).
+# ---------------------------------------------------------------------------
+
+
+def detect_genre_hint(
+    basics: dict[str, Any],
+    passive_voice: dict[str, Any],
+    dialogue_tags: dict[str, Any],
+) -> dict[str, Any]:
+    """Bucket-level genre sanity hint for router mismatch detection.
+
+    Returns detected_bucket (Fiction / NonFiction / Academic), confidence
+    (high / medium / low), signals, and a rationale string.  The router uses
+    this ONLY to challenge a gross mismatch on high-confidence detections.
+    It never auto-selects genre and never affects scoring.
+
+    Uses dialogue_tags.total_tags (quotes that carry an actual tag verb) rather
+    than raw quote-span counts, so inline scare quotes and cited phrases in
+    non-fiction prose do not register as fiction signals.
+    """
+    sent_count = basics.get("sentence_count", 0) or 1
+    word_count = basics.get("word_count", 0) or 1
+    para_count = basics.get("paragraph_count", 1) or 1
+    avg_sent_len = basics.get("average_sentence_length", 0.0)
+    passives_per_100 = passive_voice.get("passives_per_100_sentences", 0.0)
+    total_tags = dialogue_tags.get("total_tags", 0)
+
+    tagged_ratio = total_tags / sent_count
+    avg_para_len = word_count / para_count
+
+    signals: dict[str, Any] = {
+        "tagged_dialogue_ratio": round(tagged_ratio, 4),
+        "total_tagged_dialogue_lines": total_tags,
+        "passives_per_100_sentences": round(passives_per_100, 2),
+        "average_sentence_length": round(avg_sent_len, 2),
+        "avg_paragraph_length": round(avg_para_len, 1),
+    }
+
+    if tagged_ratio > 0.08:
+        detected_bucket = "Fiction"
+        confidence = "high" if tagged_ratio > 0.15 else "medium"
+        rationale = (
+            f"Tagged dialogue ratio {tagged_ratio:.1%} ({total_tags} tagged lines / "
+            f"{sent_count} sentences) indicates fiction."
+        )
+    elif tagged_ratio < 0.03:
+        academic_signals = 0
+        if passives_per_100 > 15.0:
+            academic_signals += 1
+        if avg_sent_len > 18.0:
+            academic_signals += 1
+        if academic_signals >= 2:
+            detected_bucket = "Academic"
+            confidence = "high"
+            rationale = (
+                f"Near-zero tagged dialogue ({tagged_ratio:.1%}), high passive rate "
+                f"({passives_per_100:.1f}/100 sentences), long average sentence "
+                f"({avg_sent_len:.1f} words) indicate academic or technical non-fiction."
+            )
+        else:
+            detected_bucket = "NonFiction"
+            confidence = "high" if academic_signals == 0 else "medium"
+            if academic_signals == 1:
+                rationale = (
+                    f"Near-zero tagged dialogue ({tagged_ratio:.1%}) indicates non-fiction; "
+                    f"one academic secondary signal present but not conclusive for NF2."
+                )
+            else:
+                rationale = (
+                    f"Near-zero tagged dialogue ({tagged_ratio:.1%}), moderate passive rate "
+                    f"and sentence length indicate general non-fiction."
+                )
+    else:
+        detected_bucket = "Fiction"
+        confidence = "low"
+        rationale = (
+            f"Tagged dialogue ratio {tagged_ratio:.1%} is in the ambiguous zone (3-8%). "
+            "Could be literary fiction with minimal dialogue or creative non-fiction. "
+            "Genre selection requires author confirmation."
+        )
+
+    return {
+        "detected_bucket": detected_bucket,
+        "confidence": confidence,
+        "rationale": rationale,
+        "signals": signals,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Top-level orchestration.
 # ---------------------------------------------------------------------------
 
@@ -849,9 +912,11 @@ def tokenize_chapter(stripped_path: str, config: dict[str, Any]) -> dict[str, An
         text, config.get("acronym_emphasis_exclusions", []),
     )
 
+    genre_hint = detect_genre_hint(basics, passive, tags)
+
     out = {
         "schema_version": "1.0",
-        "engine_version": "v1.23",
+        "engine_version": "v1.24",
         "stripped_file": stripped_path,
         "basics": basics,
         "very_long_sentences": very_long,
@@ -867,6 +932,7 @@ def tokenize_chapter(stripped_path: str, config: dict[str, Any]) -> dict[str, An
         "long_repeated_phrases": repeated,
         "dialogue_tags": tags,
         "acronym_consistency": acronyms,
+        "genre_hint": genre_hint,
     }
 
     # Apply 50-item truncation per category.
@@ -878,7 +944,7 @@ def tokenize_chapter(stripped_path: str, config: dict[str, Any]) -> dict[str, An
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description="PWA / Canary v1.23 tokenizer.")
+    p = argparse.ArgumentParser(description="PWA / Canary v1.24 tokenizer.")
     p.add_argument("--stripped", required=True, help="Path to stripped prose file.")
     p.add_argument("--title", required=True, help="Output filename stem.")
     p.add_argument("--config", default=None, help="Per-manuscript pwa_config.json.")

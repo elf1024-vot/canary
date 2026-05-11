@@ -368,8 +368,8 @@ def validate(
                         f"'{excerpt}'"
                     )
             # The claim itself need not be a verbatim substring of the
-            # chapter (the report often paraphrases, e.g., "POV: Naida"
-            # for a chapter that just shows Naida narrating). But if the
+            # chapter (the report often paraphrases, e.g., "POV: Alex"
+            # for a chapter that just shows Alex narrating). But if the
             # subagent claims found_in_chapter: true AND there's no
             # source_excerpt to anchor it, that's a defect.
             if not _is_nonempty_string(source_excerpt):

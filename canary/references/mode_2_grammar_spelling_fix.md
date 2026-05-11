@@ -10,7 +10,7 @@ The original document is never modified.
 
 ### Step 1: Load Standards
 
-Read `{SKILL_BASE}\references\_standards.md` in full. Pay attention to:
+Load using the same two-layer approach as Mode 1 Step 1: bundled `{SKILL_BASE}\references\_standards.md` always, then project `{{DOC_FOLDER}}\standards.md` (or `STANDARDS_PATH`) as an override layer if present. Read both in full, paying attention to:
 
 - The Grammar and Spelling detection heuristics
 - The Auto-fix Tiers section, specifically the note about homophones and proper nouns being `prompt`-tier within the otherwise `safe` Grammar and Spelling categories
@@ -160,5 +160,6 @@ Do not restate the changes in chat. The fix log is the deliverable.
 
 - Path to the document (required)
 - Genre selection (required for the embedded Mode 1 report; Grammar and Spelling fix behavior is genre-neutral)
+- Standards document path (optional; if not supplied, Step 1 checks `{{DOC_FOLDER}}\standards.md` then asks the user)
 - Optional: title override
 - Optional: path to a custom dictionary to treat listed proper nouns / foreign words / coined terms as correct

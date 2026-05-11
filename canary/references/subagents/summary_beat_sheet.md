@@ -18,7 +18,7 @@ Read EXACTLY this one file and no other:
 
 `{{ORIGINAL_CHAPTER_PATH}}`
 
-Hard constraint: read the ORIGINAL chapter, not the stripped chapter. The stripped chapter has had headers, paired-delimiter markers, and Part/Cast lines removed; you need the full document for context. Do not read any other file. Any character name, event, location, or quoted phrase in your output that does not appear verbatim in this file is invention and will fail Report Verification.
+Hard constraint: read the ORIGINAL chapter, not the stripped chapter. The stripped chapter has had headers, paired-delimiter markers, and other declared strip patterns removed; you need the full document for context. Do not read any other file. Any character name, event, location, or quoted phrase in your output that does not appear verbatim in this file is invention and will fail Report Verification.
 
 If the file is unreadable, return `{"error": "original chapter not accessible: <path>"}` and stop.
 
@@ -105,8 +105,8 @@ Return STRICT JSON only. No prose before, no prose after, no markdown code fence
   "original_chapter_read": "{{ORIGINAL_CHAPTER_PATH}}",
   "genre": "{{GENRE}}",
   "chapter_word_count": 7151,
-  "pov_character": "Naida",
-  "named_characters": ["Naida", "Ana"],
+  "pov_character": "Alex",
+  "named_characters": ["Alex", "Jordan"],
   "what_happened": "Two to three paragraphs of flat-tone account, written as readable prose with paragraph breaks represented by \\n\\n in the JSON string.",
   "beat_sheet": [
     {
@@ -114,14 +114,14 @@ Return STRICT JSON only. No prose before, no prose after, no markdown code fence
       "name": "Setting establishment",
       "word_range_start": 0,
       "word_range_end": 340,
-      "description": "Opens at the safe house at dusk; Naida prepares for a meet with Ana."
+      "description": "Opens in the warehouse at dusk; Alex prepares for a meeting with Jordan."
     },
     {
       "number": 2,
-      "name": "Ana arrives",
+      "name": "Jordan arrives",
       "word_range_start": 341,
       "word_range_end": 1100,
-      "description": "Ana arrives carrying news; Naida reads her tension before any dialogue."
+      "description": "Jordan arrives with news; Alex reads her tension before any dialogue."
     }
   ],
   "structural_observations": [
@@ -132,7 +132,7 @@ Return STRICT JSON only. No prose before, no prose after, no markdown code fence
 }
 ```
 
-If the POV character is genuinely ambiguous (multiple POVs in the chapter, or a third-person camera that does not settle on one consciousness), use a list under `pov_character` instead of a string: `"pov_character": ["Naida", "Ana"]`.
+If the POV character is genuinely ambiguous (multiple POVs in the chapter, or a third-person camera that does not settle on one consciousness), use a list under `pov_character` instead of a string: `"pov_character": ["Alex", "Jordan"]`.
 
 If you cannot determine the chapter's word count exactly, estimate by whitespace tokens; the router will substring-check your beat ranges against the actual word count.
 
@@ -162,10 +162,10 @@ After receiving the JSON output, the router validates (per the Subagent Architec
 9. Beats are contiguous: `beat[i].word_range_start <= beat[i-1].word_range_end + 1` for all i > 0 (the router allows a small overlap or zero-gap; it rejects gaps larger than 50 words because that means the subagent skipped a section).
 10. `structural_observations` has between 2 and 3 entries inclusive (per the subagent's prompt; longer observation lists belong elsewhere).
 
-If any validation fails, the router re-dispatches once with the specific failure cited in a corrective instruction (e.g., "you named the character `Santiago` in `named_characters`, but that string does not appear in the original chapter; re-read the chapter and name only characters who appear on the page"). If the second dispatch also fails, the router hard-stops the Mode 1 run and reports the failure to the author.
+If any validation fails, the router re-dispatches once with the specific failure cited in a corrective instruction (e.g., "you named the character `Phantom` in `named_characters`, but that string does not appear in the original chapter; re-read the chapter and name only characters who appear on the page"). If the second dispatch also fails, the router hard-stops the Mode 1 run and reports the failure to the author.
 
 ## Version history
 
-- **v1.2 (2026-04-23)** - Word-count and array-shape hardening after first live run of the `canary` skill on Blondie Book 3 Ch13.1 produced `chapter_word_count: 3347` on a 3,981-word chapter (15.9% off from router count; validator failed first attempt). Re-dispatch corrected the count but returned `structural_observations` as a single concatenated string rather than an array of 2-3 items; router applied mechanical normalization to avoid a hard-stop. Added a "Word count procedure" section placing whitespace-tokenization as an explicit pre-step before beat-range emission. Added a Hard constraint making `structural_observations` array shape explicit with a WRONG/RIGHT example. Bumped schema example's `subagent_version` from `v1.1` to `v1.2`. No schema fields changed; this is a prompt-only hardening. Validator `router/validators/summary_beat_sheet.py` unchanged.
-- **v1.1 (2026-04-23)** - Schema-literalness hardening, parallel to strip_verify v1.1. The v1.0 dispatch produced two real defects (chapter_word_count 16.4% off; beat_sheet[9].word_range_end beyond the chapter's actual word count) that the validator caught correctly, but the drift pattern from strip_verify's v1.0 run (key-name substitution, added diagnostic fields) motivated the same hardening here before the re-dispatch. Added a "Schema literalness" section enumerating the exact top-level keys (`subagent_version`, `original_chapter_read`, `genre`, `chapter_word_count`, `pov_character`, `named_characters`, `what_happened`, `beat_sheet`, `structural_observations`) and the per-beat keys (`number`, `name`, `word_range_start`, `word_range_end`, `description`), enumerating plausible drift patterns (`characters` for `named_characters`, `summary` for `what_happened`, `beats` for `beat_sheet`, `start`/`end` for `word_range_start`/`word_range_end`, `observations` for `structural_observations`), and explicitly forbidding both renaming and adding fields. Added Hard constraint making field-name literalness a gate. Bumped schema example's `subagent_version` from `v1.0` to `v1.1`. No schema fields changed; this is a prompt-only hardening. Validator `router/validators/summary_beat_sheet.py` unchanged.
+- **v1.2 (2026-04-23)** - Word-count and array-shape hardening after the first live run produced a `chapter_word_count` 15.9% off from the router count (validator failed first attempt). Re-dispatch corrected the count but returned `structural_observations` as a single concatenated string rather than an array of 2-3 items; router applied mechanical normalization to avoid a hard-stop. Added a "Word count procedure" section placing whitespace-tokenization as an explicit pre-step before beat-range emission. Added a Hard constraint making `structural_observations` array shape explicit with a WRONG/RIGHT example. Bumped schema example's `subagent_version` from `v1.1` to `v1.2`. No schema fields changed; this is a prompt-only hardening. Validator `router/validators/summary_beat_sheet.py` unchanged.
+- **v1.1 (2026-04-23)** - Schema-literalness hardening, parallel to strip_verify v1.1. The v1.0 dispatch produced two real defects (chapter_word_count off; beat_sheet tail entry beyond the chapter's actual word count) that the validator caught correctly, but the drift pattern from strip_verify's v1.0 run (key-name substitution, added diagnostic fields) motivated the same hardening here before the re-dispatch. Added a "Schema literalness" section enumerating the exact top-level keys (`subagent_version`, `original_chapter_read`, `genre`, `chapter_word_count`, `pov_character`, `named_characters`, `what_happened`, `beat_sheet`, `structural_observations`) and the per-beat keys (`number`, `name`, `word_range_start`, `word_range_end`, `description`), enumerating plausible drift patterns (`characters` for `named_characters`, `summary` for `what_happened`, `beats` for `beat_sheet`, `start`/`end` for `word_range_start`/`word_range_end`, `observations` for `structural_observations`), and explicitly forbidding both renaming and adding fields. Added Hard constraint making field-name literalness a gate. Bumped schema example's `subagent_version` from `v1.0` to `v1.1`. No schema fields changed; this is a prompt-only hardening. Validator `router/validators/summary_beat_sheet.py` unchanged.
 - **v1.0 (2026-04-22)** - Initial hardened release per `_standards.md` v1.25 Subagent Architectural Rule. The Summary/Beat Sheet pass had previously been described in `_standards.md` Step 2a prose only; this template makes the dispatch deterministic and the output router-validatable. The hard-constraint set is preserved verbatim from `_standards.md` "Hard constraints the subagent MUST observe." JSON schema is structured (no markdown headings inside the JSON) so the validator can substring-check named characters and bound-check beat ranges.

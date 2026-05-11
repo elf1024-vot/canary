@@ -39,8 +39,8 @@ logged to the strip log as a warning, paragraph-numbered against the source.
 Usage:
     python strip_engine.py \\
         --source "C:\\path\\to\\source.txt" \\
-        --title "Ulysses Ch11.1" \\
-        --pov "Naida" \\
+        --title "Chapter 1" \\
+        --pov "Alice" \\
         [--config "C:\\path\\to\\manuscript\\pwa_config.json"] \\
         [--routine-config "C:\\path\\to\\routine\\pwa_config.json"] \\
         [--out-dir "C:\\path\\to\\temp"] \\
@@ -226,6 +226,27 @@ def _markdown_heading_match(line: str, rule: dict[str, Any]) -> bool:
     return False
 
 
+_SETEXT_H1_RE = re.compile(r"^=+\s*$")
+_SETEXT_H2_RE = re.compile(r"^-+\s*$")
+
+
+def _setext_heading_match(text_line: str, underline: str | None, rule: dict[str, Any]) -> bool:
+    """True if text_line + underline form a setext heading at one of the rule's levels.
+
+    Setext H1: text followed by a line of '=' characters.
+    Setext H2: text followed by a line of '-' characters.
+    Only fires when the text_line is non-blank (blank lines cannot be headings).
+    """
+    if not text_line.strip() or underline is None:
+        return False
+    levels = rule.get("levels", [])
+    if 1 in levels and _SETEXT_H1_RE.match(underline):
+        return True
+    if 2 in levels and _SETEXT_H2_RE.match(underline):
+        return True
+    return False
+
+
 def apply_line_oriented_rules(
     text: str,
     rules: list[dict[str, Any]],
@@ -266,12 +287,17 @@ def apply_line_oriented_rules(
                     continue
 
             matched = False
+            setext_matched = False
             if rtype == "line_starts_with":
                 matched = _line_starts_with_match(line, rule)
             elif rtype == "exact_line":
                 matched = _exact_line_match(line, rule)
             elif rtype == "markdown_heading":
                 matched = _markdown_heading_match(line, rule)
+                if not matched:
+                    next_line = bare[i + 1] if i + 1 < len(bare) else None
+                    setext_matched = _setext_heading_match(line, next_line, rule)
+                    matched = setext_matched
 
             if not matched:
                 continue
@@ -280,6 +306,9 @@ def apply_line_oriented_rules(
             slot = stats.setdefault(label, {"matches": 0, "lines_consumed": 0})
             consume = _resolve_consume(rule, "single_line")
             end_idx = _consume_block(bare, i, consume)
+            # Setext headings span two lines (text + underline); ensure both are consumed.
+            if setext_matched:
+                end_idx = max(end_idx, i + 2)
             for k in range(i, end_idx):
                 if not drop[k]:
                     drop[k] = True
@@ -771,7 +800,7 @@ def strip_chapter(
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="PWA / Canary v1.23 strip engine.")
     p.add_argument("--source", required=True, help="Path to manuscript source file.")
-    p.add_argument("--title", required=True, help="Output filename stem (e.g., 'Ulysses Ch11.1').")
+    p.add_argument("--title", required=True, help="Output filename stem (e.g., 'Chapter 1').")
     p.add_argument("--pov", default=None, help="POV character name (required when any Mode A pair is declared).")
     p.add_argument("--config", default=None, help="Per-manuscript pwa_config.json path (optional override).")
     p.add_argument("--routine-config", default=None, help="Routine-level pwa_config.json path (optional override).")
